@@ -119,6 +119,7 @@ struct Price {
     whitelisted: bool,
     buys: Order,
     sells: Order,
+    vendor: Option<()>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -150,6 +151,16 @@ struct Item {
     id: i32,
     chat_link: String,
     icon: String,
+}
+
+fn vendor(prices: &mut HashMap<i32, Price>, id: i32, price: i32) {
+    prices.insert(id, Price {
+        id: id,
+        whitelisted: true,
+        buys: Order { quantity: 0, unit_price: 0 },
+        sells: Order { quantity: 1, unit_price: price },
+        vendor: Some(()),
+    });
 }
 
 fn main() -> Result<()> {
@@ -192,11 +203,19 @@ fn main() -> Result<()> {
     println!("total items: {}", all_items.len());
 
     let mut prices = HashMap::<i32, Price>::new();
+    // Spool of Gossamer Thread
+    vendor(&mut prices, 19790, 64);
     let pid_vec: Vec<i32> = all_items.iter().cloned().collect();
     for ids in pid_vec.chunks(50) {
         let ps: Vec<Price> = client.fetch(false, &format!("commerce/prices?ids={}", ids_str(ids)))?;
         for p in ps {
-            prices.insert(p.id, p);
+            let mut to_insert = p.clone();
+            if let Some(other) = prices.get(&p.id) {
+                if other.sells.unit_price < to_insert.sells.unit_price {
+                    to_insert = other.clone();
+                }
+            }
+            prices.insert(p.id, to_insert);
         }
         print!(".");
         std::io::stdout().flush()?;
@@ -252,7 +271,11 @@ fn main() -> Result<()> {
         for i in &r.ingredients {
             let ii = items.get(&i.item_id).unwrap();
             let ip = prices.get(&i.item_id).unwrap();
-            println!("\t{}: {} = {} @{}", ii.name, i.count * ip.sells.unit_price, i.count, ip.sells.unit_price);
+            let mut vendor = "";
+            if ip.vendor.is_some() {
+                vendor = " [vendor]";
+            }
+            println!("\t{}: {} = {} @{}{}", ii.name, i.count * ip.sells.unit_price, i.count, ip.sells.unit_price, vendor);
         }
         println!("\tTotal: {}", p.craft_total);
     }

@@ -55,7 +55,6 @@ impl Client {
         let since = Instant::now().duration_since(self.last);
         let tick = Duration::from_secs_f32(0.1);
         if since < tick {
-            //println!("throttle: {}", (tick - since).as_secs_f32());
             std::thread::sleep(tick - since);
         }
         self.last = Instant::now();
@@ -67,7 +66,6 @@ impl Client {
         }
         let req = req.build()?;
         let mut res = self.reqw.execute(req.try_clone().unwrap())?;
-        //println!("{:?}", res);
         if res.status() == StatusCode::TOO_MANY_REQUESTS {
             println!("\t429 sleep");
             std::thread::sleep(tick + tick);
@@ -76,12 +74,17 @@ impl Client {
         }
         match res.status() {
             StatusCode::OK => (),
-            StatusCode::PARTIAL_CONTENT => println!("[Partial {:?}]", res),
+            StatusCode::PARTIAL_CONTENT => /*println!("[Partial {:?}]", res)*/ (),
             _ => failed!("{:?}", res),
         }
 
         Ok(res.json()?)
     }
+}
+
+fn ids_str(ids: &[i32]) -> String {
+    let id_strs: Vec<String> = ids.iter().map(|id| format!("{}", id)).collect();
+    id_strs.join(",")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,6 +113,20 @@ struct Recipe {
     chat_link: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct Price {
+    id: i32,
+    whitelisted: bool,
+    buys: Order,
+    sells: Order,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Order {
+    quantity: i32,
+    unit_price: i32,
+}
+
 fn main() -> Result<()> {
     let mut client = Client::new();
 
@@ -125,14 +142,12 @@ fn main() -> Result<()> {
         }
         ids_by_char.entry(name).or_insert(vec![]).append(&mut r.recipes);
     }
-    println!("{}", all_ids.len());
+    println!("known recipes: {}", all_ids.len());
 
     let mut recipes = HashMap::<i32, Recipe>::new();
     let id_vec: Vec<i32> = all_ids.iter().cloned().collect();
     for ids in id_vec.chunks(50) {
-        let id_strs: Vec<String> = ids.iter().map(|id| format!("{}", id)).collect();
-        let id_param: String = id_strs.join(",");
-        let rs: Vec<Recipe> = client.fetch(false, &format!("recipes?ids={}", id_param))?;
+        let rs: Vec<Recipe> = client.fetch(false, &format!("recipes?ids={}", ids_str(ids)))?;
         for r in rs {
             recipes.insert(r.id, r);
         }
@@ -140,13 +155,29 @@ fn main() -> Result<()> {
         std::io::stdout().flush()?;
     }
     println!("");
-    /*
-    for &id in &all_ids {
-        let r: Recipe = client.fetch(false, &format!("recipes/{}", id))?;
-        recipes.insert(id, r);
+    println!("retrieved recipes: {}", recipes.len());
+
+    let mut all_items = HashSet::<i32>::new();
+    for (&id, r) in &recipes {
+        all_items.insert(id);
+        for i in &r.ingredients {
+            all_items.insert(i.item_id);
+        }
     }
-    */
-    println!("{}", recipes.len());
+    println!("total items: {}", all_items.len());
+
+    let mut prices = HashMap::<i32, Price>::new();
+    let pid_vec: Vec<i32> = all_items.iter().cloned().collect();
+    for ids in pid_vec.chunks(50) {
+        let ps: Vec<Price> = client.fetch(false, &format!("commerce/prices?ids={}", ids_str(ids)))?;
+        for p in ps {
+            prices.insert(p.id, p);
+        }
+        print!(".");
+        std::io::stdout().flush()?;
+    }
+    println!("");
+    println!("retrieved prices: {}", prices.len());
 
     Ok(())
 }

@@ -229,6 +229,7 @@ fn main() -> Result<()> {
         let sale_total = if let Some(p) = prices.get(&r.output_item_id) {
             p.buys.unit_price * r.output_item_count
         } else { continue };
+        let sale_total = sale_total - (0.15 * (sale_total as f32).ceil()) as i32;
         let mut craft_total = 0;
         for i in &r.ingredients {
             if let Some(p) = prices.get(&i.item_id) {

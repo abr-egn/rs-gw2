@@ -127,6 +127,30 @@ struct Order {
     unit_price: i32,
 }
 
+#[derive(Debug, Clone)]
+struct Profit {
+    id: i32,
+    sale_price: i32,
+    craft_price: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Item {
+    name: String,
+    description: Option<String>,
+    #[serde(rename = "type")]
+    typ: String,
+    level: i32,
+    rarity: String,
+    vendor_value: i32,
+    game_types: Vec<String>,
+    flags: Vec<String>,
+    restrictions: Vec<String>,
+    id: i32,
+    chat_link: String,
+    icon: String,
+}
+
 fn main() -> Result<()> {
     let mut client = Client::new();
 
@@ -178,6 +202,43 @@ fn main() -> Result<()> {
     }
     println!("");
     println!("retrieved prices: {}", prices.len());
+
+    let mut profits = vec![];
+    'recipes: for (_, r) in &recipes {
+        let sale_price = if let Some(p) = prices.get(&r.output_item_id) {
+            p.buys.unit_price * r.output_item_count
+        } else { continue };
+        let mut craft_price = 0;
+        for i in &r.ingredients {
+            if let Some(p) = prices.get(&i.item_id) {
+                craft_price += p.sells.unit_price * i.count;
+            } else { continue 'recipes };
+        }
+        if sale_price > craft_price {
+            profits.push(Profit {
+                id: r.output_item_id,
+                sale_price, craft_price,
+            });
+        }
+    }
+    profits.sort_by(|b, a|
+        (a.sale_price - a.craft_price).cmp(&(b.sale_price - b.craft_price))
+    );
+    println!("profits: {}", profits.len());
+
+    let profit_ids: Vec<i32> = profits.iter().map(|p| p.id).collect();
+    let mut items = HashMap::<i32, Item>::new();
+    for ids in profit_ids.chunks(50) {
+        let is: Vec<Item> = client.fetch(false, &format!("items?ids={}", ids_str(ids)))?;
+        for i in is {
+            items.insert(i.id, i);
+        }
+    }
+
+    for p in profits {
+        let item = items.get(&p.id).unwrap();
+        println!("{}: {} [{} - {}]", item.name, p.sale_price - p.craft_price, p.sale_price, p.craft_price);
+    }
 
     Ok(())
 }

@@ -60,7 +60,8 @@ impl Client {
         }
         self.last = Instant::now();
 
-        let mut req = self.reqw.get(&format!("https://api.guildwars2.com/v2/{}", path));
+        let mut req = self.reqw.get(&format!("https://api.guildwars2.com/v2/{}", path))
+            .query(&[("v", "latest")]);
         if auth {
             req = req.query(&[("access_token", KEY)]);
         }
@@ -128,7 +129,7 @@ fn main() -> Result<()> {
 
     let mut recipes = HashMap::<i32, Recipe>::new();
     let id_vec: Vec<i32> = all_ids.iter().cloned().collect();
-    for ids in id_vec.chunks(10) {
+    for ids in id_vec.chunks(50) {
         let id_strs: Vec<String> = ids.iter().map(|id| format!("{}", id)).collect();
         let id_param: String = id_strs.join(",");
         let rs: Vec<Recipe> = client.fetch(false, &format!("recipes?ids={}", id_param))?;

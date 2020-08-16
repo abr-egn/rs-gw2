@@ -30,9 +30,14 @@ macro_rules! failed {
 
 fn fetch<T: DeserializeOwned>(
     client: &reqwest::blocking::Client,
+    auth: bool,
     path: &str,
 ) -> Result<T> {
-    let res = client.get(&format!("https://api.guildwars2.com/v2/{}?access_token={}", path, KEY)).send()?;
+    let mut req = client.get(&format!("https://api.guildwars2.com/v2/{}", path));
+    if auth {
+        req = req.query(&[("access_token", KEY)]);
+    }
+    let res = req.send()?;
     //println!("{:?}", res);
     if res.status() != StatusCode::OK {
         failed!("{:?}", res)
@@ -68,12 +73,12 @@ struct Recipe {
 
 fn main() -> Result<()> {
     let client = reqwest::blocking::Client::new();
-    let names: Vec<String> = fetch(&client, "characters")?;
+    let names: Vec<String> = fetch(&client, true, "characters")?;
     println!("{:?}", names);
     let mut ids_by_char = HashMap::<&str, Vec<i32>>::new();
     let mut all_ids = HashSet::<i32>::new();
     for name in &names {
-        let mut r: Recipes = fetch(&client, &format!("characters/{}/recipes", name))?;
+        let mut r: Recipes = fetch(&client, true, &format!("characters/{}/recipes", name))?;
         println!("{}: {}", name, r.recipes.len());
         for id in &r.recipes {
             all_ids.insert(*id);

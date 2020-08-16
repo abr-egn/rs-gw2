@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
+use std::time::{Duration, Instant};
 
 use reqwest::{self, StatusCode};
 use serde::{Deserialize};
@@ -28,21 +29,44 @@ macro_rules! failed {
     };
 }
 
-fn fetch<T: DeserializeOwned>(
-    client: &reqwest::blocking::Client,
-    auth: bool,
-    path: &str,
-) -> Result<T> {
-    let mut req = client.get(&format!("https://api.guildwars2.com/v2/{}", path));
-    if auth {
-        req = req.query(&[("access_token", KEY)]);
+struct Client {
+    reqw: reqwest::blocking::Client,
+    last: Instant,
+}
+
+impl Client {
+    pub fn new() -> Self {
+        Client {
+            reqw: reqwest::blocking::Client::new(),
+            last: Instant::now(),
+        }
     }
-    let res = req.send()?;
-    //println!("{:?}", res);
-    if res.status() != StatusCode::OK {
-        failed!("{:?}", res)
+
+    pub fn fetch<T: DeserializeOwned>(
+        &mut self,
+        auth: bool,
+        path: &str,
+    ) -> Result<T> {
+        let since = Instant::now().duration_since(self.last);
+        let tick = Duration::from_secs_f32(0.1);
+        if since < tick {
+            //println!("throttle: {}", (tick - since).as_secs_f32());
+            std::thread::sleep(tick - since);
+        }
+        self.last = Instant::now();
+
+        let mut req = self.reqw.get(&format!("https://api.guildwars2.com/v2/{}", path));
+        if auth {
+            req = req.query(&[("access_token", KEY)]);
+        }
+        let res = req.send()?;
+        //println!("{:?}", res);
+        if res.status() != StatusCode::OK {
+            failed!("{:?}", res)
+        }
+
+        Ok(res.json()?)
     }
-    Ok(res.json()?)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -72,13 +96,14 @@ struct Recipe {
 }
 
 fn main() -> Result<()> {
-    let client = reqwest::blocking::Client::new();
-    let names: Vec<String> = fetch(&client, true, "characters")?;
+    let mut client = Client::new();
+
+    let names: Vec<String> = client.fetch(true, "characters")?;
     println!("{:?}", names);
     let mut ids_by_char = HashMap::<&str, Vec<i32>>::new();
     let mut all_ids = HashSet::<i32>::new();
     for name in &names {
-        let mut r: Recipes = fetch(&client, true, &format!("characters/{}/recipes", name))?;
+        let mut r: Recipes = client.fetch(true, &format!("characters/{}/recipes", name))?;
         println!("{}: {}", name, r.recipes.len());
         for id in &r.recipes {
             all_ids.insert(*id);

@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use reqwest::{self, StatusCode};
 use serde::{Deserialize};
 use serde::de::DeserializeOwned;
+//use serde::ser::Serialize;
 //use serde_json::Value;
 
 static KEY: &str = "9E827119-71EE-774C-88AE-B4D1D4B30868205CD293-9A69-415C-A3E3-4CB1E184722C";
@@ -42,11 +44,14 @@ impl Client {
         }
     }
 
-    pub fn fetch<T: DeserializeOwned>(
+    pub fn fetch<Out>(
         &mut self,
         auth: bool,
         path: &str,
-    ) -> Result<T> {
+    ) -> Result<Out>
+    where
+        Out: DeserializeOwned,
+    {
         let since = Instant::now().duration_since(self.last);
         let tick = Duration::from_secs_f32(0.1);
         if since < tick {
@@ -59,10 +64,19 @@ impl Client {
         if auth {
             req = req.query(&[("access_token", KEY)]);
         }
-        let res = req.send()?;
+        let req = req.build()?;
+        let mut res = self.reqw.execute(req.try_clone().unwrap())?;
         //println!("{:?}", res);
-        if res.status() != StatusCode::OK {
-            failed!("{:?}", res)
+        if res.status() == StatusCode::TOO_MANY_REQUESTS {
+            println!("\t429 sleep");
+            std::thread::sleep(tick + tick);
+            self.last = Instant::now();
+            res = self.reqw.execute(req)?;
+        }
+        match res.status() {
+            StatusCode::OK => (),
+            StatusCode::PARTIAL_CONTENT => println!("[Partial {:?}]", res),
+            _ => failed!("{:?}", res),
         }
 
         Ok(res.json()?)
@@ -70,7 +84,7 @@ impl Client {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct Recipes {
+struct CharacterRecipes {
     recipes: Vec<i32>,
 }
 
@@ -103,7 +117,7 @@ fn main() -> Result<()> {
     let mut ids_by_char = HashMap::<&str, Vec<i32>>::new();
     let mut all_ids = HashSet::<i32>::new();
     for name in &names {
-        let mut r: Recipes = client.fetch(true, &format!("characters/{}/recipes", name))?;
+        let mut r: CharacterRecipes = client.fetch(true, &format!("characters/{}/recipes", name))?;
         println!("{}: {}", name, r.recipes.len());
         for id in &r.recipes {
             all_ids.insert(*id);
@@ -111,5 +125,27 @@ fn main() -> Result<()> {
         ids_by_char.entry(name).or_insert(vec![]).append(&mut r.recipes);
     }
     println!("{}", all_ids.len());
+
+    let mut recipes = HashMap::<i32, Recipe>::new();
+    let id_vec: Vec<i32> = all_ids.iter().cloned().collect();
+    for ids in id_vec.chunks(10) {
+        let id_strs: Vec<String> = ids.iter().map(|id| format!("{}", id)).collect();
+        let id_param: String = id_strs.join(",");
+        let rs: Vec<Recipe> = client.fetch(false, &format!("recipes?ids={}", id_param))?;
+        for r in rs {
+            recipes.insert(r.id, r);
+        }
+        print!(".");
+        std::io::stdout().flush()?;
+    }
+    println!("");
+    /*
+    for &id in &all_ids {
+        let r: Recipe = client.fetch(false, &format!("recipes/{}", id))?;
+        recipes.insert(id, r);
+    }
+    */
+    println!("{}", recipes.len());
+
     Ok(())
 }

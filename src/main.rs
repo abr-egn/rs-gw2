@@ -130,8 +130,9 @@ struct Order {
 #[derive(Debug, Clone)]
 struct Profit {
     id: i32,
-    sale_price: i32,
-    craft_price: i32,
+    recipe: i32,
+    sale_total: i32,
+    craft_total: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -204,40 +205,56 @@ fn main() -> Result<()> {
     println!("retrieved prices: {}", prices.len());
 
     let mut profits = vec![];
+    let mut profit_ids = HashSet::<i32>::new();
     'recipes: for (_, r) in &recipes {
-        let sale_price = if let Some(p) = prices.get(&r.output_item_id) {
+        let sale_total = if let Some(p) = prices.get(&r.output_item_id) {
             p.buys.unit_price * r.output_item_count
         } else { continue };
-        let mut craft_price = 0;
+        let mut craft_total = 0;
         for i in &r.ingredients {
             if let Some(p) = prices.get(&i.item_id) {
-                craft_price += p.sells.unit_price * i.count;
+                craft_total += p.sells.unit_price * i.count;
             } else { continue 'recipes };
         }
-        if sale_price > craft_price {
+        if sale_total > craft_total {
             profits.push(Profit {
                 id: r.output_item_id,
-                sale_price, craft_price,
+                recipe: r.id,
+                sale_total, craft_total,
             });
+            profit_ids.insert(r.output_item_id);
+            for i in &r.ingredients {
+                profit_ids.insert(i.item_id);
+            }
         }
     }
     profits.sort_by(|b, a|
-        (a.sale_price - a.craft_price).cmp(&(b.sale_price - b.craft_price))
+        (a.sale_total - a.craft_total).cmp(&(b.sale_total - b.craft_total))
     );
     println!("profits: {}", profits.len());
 
-    let profit_ids: Vec<i32> = profits.iter().map(|p| p.id).collect();
+    let iids_vec: Vec<i32> = profit_ids.iter().cloned().collect();
     let mut items = HashMap::<i32, Item>::new();
-    for ids in profit_ids.chunks(50) {
+    for ids in iids_vec.chunks(50) {
         let is: Vec<Item> = client.fetch(false, &format!("items?ids={}", ids_str(ids)))?;
         for i in is {
             items.insert(i.id, i);
         }
     }
 
+    println!("");
     for p in profits {
         let item = items.get(&p.id).unwrap();
-        println!("{}: {} [{} - {}]", item.name, p.sale_price - p.craft_price, p.sale_price, p.craft_price);
+        println!("{}: {}", item.name, p.sale_total - p.craft_total);
+        let r = recipes.get(&p.recipe).unwrap();
+        let output_price = prices.get(&p.id).unwrap();
+        println!("\tSale: {} = {} @{}", p.sale_total, r.output_item_count, output_price.buys.unit_price);
+        for i in &r.ingredients {
+            let ii = items.get(&i.item_id).unwrap();
+            let ip = prices.get(&i.item_id).unwrap();
+            println!("\t{}: {} = {} @{}", ii.name, i.count * ip.sells.unit_price, i.count, ip.sells.unit_price);
+        }
+        println!("\tTotal: {}", p.craft_total);
     }
 
     Ok(())

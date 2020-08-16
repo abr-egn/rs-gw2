@@ -203,8 +203,20 @@ fn main() -> Result<()> {
     println!("total items: {}", all_items.len());
 
     let mut prices = HashMap::<i32, Price>::new();
+    // Thermocatalytic Reagent
+    vendor(&mut prices, 46747, 150);
     // Spool of Gossamer Thread
     vendor(&mut prices, 19790, 64);
+    // Spool of Silk Thread
+    vendor(&mut prices, 19791, 48);
+    // Spool of Linen Thread
+    vendor(&mut prices, 19793, 32);
+    // Spool of Cotton Thread
+    vendor(&mut prices, 19794, 24);
+    // Spool of Wool Thread
+    vendor(&mut prices, 19789, 16);
+    // Spool of Jute Thread
+    vendor(&mut prices, 19792, 8);
     let pid_vec: Vec<i32> = all_items.iter().cloned().collect();
     for ids in pid_vec.chunks(50) {
         let ps: Vec<Price> = client.fetch(false, &format!("commerce/prices?ids={}", ids_str(ids)))?;

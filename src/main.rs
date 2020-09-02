@@ -6,7 +6,7 @@ mod error;
 mod client;
 mod index;
 
-use crate::client::{Client, Item, ItemId, RecipeId};
+use crate::client::{Client, ItemId, Recipe, RecipeId};
 use crate::error::Result;
 use crate::index::Index;
 
@@ -15,8 +15,8 @@ enum Source {
     Vendor,
     Recipe(RecipeId),
     Auction,
-    AccountBound,
     Unknown,
+    Special,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +31,8 @@ struct Profit {
     id: RecipeId,
     value: i32,
 }
+
+const UNKNOWN_COST: i32 = 100000;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
@@ -52,7 +54,7 @@ fn main() -> Result<()> {
     // Spool of Jute Thread
     vendor(&mut costs, 19792, 8);
 
-    let mut queue: VecDeque<ItemId> = index.all_items.iter().cloned().collect();
+    let mut queue: VecDeque<ItemId> = index.items.keys().cloned().collect();
     'queue: while let Some(iid) = queue.pop_front() {
         if costs.contains_key(&iid) { continue }
         match index.recipes_by_item.get(&iid) {
@@ -60,13 +62,7 @@ fn main() -> Result<()> {
                 let (source, value) = if let Some(price) = index.prices.get(&iid) {
                     (Source::Auction, price.sells.unit_price)
                 } else {
-                    let items = client.items(&[iid])?;
-                    let item = &items[0];
-                    if item.flags.iter().any(|f| f == "AccountBound") {
-                        (Source::AccountBound, 0)
-                    } else {
-                        (Source::Unknown, 0)
-                    }
+                    (Source::Unknown, UNKNOWN_COST)
                 };
                 costs.insert(iid, Cost { id: iid, source, value });
             }
@@ -105,13 +101,6 @@ fn main() -> Result<()> {
     }
     println!("unknown: {}", unknown.len());
 
-    if !unknown.is_empty() {
-        let items = client.items(&unknown)?;
-        for item in items {
-            println!("\t{}", item.name);
-        }
-    }
-
     let mut profits = vec![];
     let mut profit_ids = HashSet::new();
     for r in index.recipes.values() {
@@ -133,35 +122,16 @@ fn main() -> Result<()> {
     profits.sort_by(|b, a|a.value.cmp(&b.value));
     println!("profits: {}", profits.len());
 
-    let iids_vec: Vec<ItemId> = profit_ids.iter().cloned().collect();
-    let mut items = HashMap::<ItemId, Item>::new();
-    for ids in iids_vec.chunks(50) {
-        let is: Vec<Item> = client.items(ids)?;
-        for i in is {
-            items.insert(i.id, i);
-        }
-    }
-
     println!("");
     for p in profits {
+        if p.value < 10000 { break }
         let recipe = index.recipes.get(&p.id).unwrap();
-        let item = items.get(&recipe.output_item_id).unwrap();
+        let item = index.items.get(&recipe.output_item_id).unwrap();
         let cost = costs.get(&item.id).unwrap();
         println!("{}: {}", item.name, p.value);
         let output_price = index.prices.get(&item.id).unwrap();
         println!("\tSale: {} = {} @{}", recipe.output_item_count * output_price.buys.unit_price, recipe.output_item_count, output_price.buys.unit_price);
-        for i in &recipe.ingredients {
-            let ii = items.get(&i.item_id).unwrap();
-            let ic = costs.get(&i.item_id).unwrap();
-            let source = match ic.source {
-                Source::AccountBound => "account bound",
-                Source::Auction => "auction",
-                Source::Recipe(_) => "recipe",
-                Source::Unknown => "unknown",
-                Source::Vendor => "vendor",
-            };
-            println!("\t{}: {} = {} @{} [{}]", ii.name, i.count * ic.value, i.count, ic.value, source);
-        }
+        print_ingredients(&index, &costs, &recipe, 1);
         println!("\tCost: {}", cost.value);
     }
 
@@ -174,4 +144,26 @@ fn vendor(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
         source: Source::Vendor,
         value: price,
     });
+}
+
+fn special(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
+    costs.insert(ItemId(id), Cost {
+        id: ItemId(id),
+        source: Source::Special,
+        value: price,
+    });
+}
+
+fn print_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, indent: usize) {
+    for i in &recipe.ingredients {
+        let ii = index.items.get(&i.item_id).expect(&format!("no item for {:?}", i.item_id));
+        let ic = costs.get(&i.item_id).expect(&format!("no cost for {}", ii.name));
+        let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
+        let tabs = tabs.join("");
+        println!("{}{}: {} = {} @{} [{:?}]", tabs, ii.name, i.count * ic.value, i.count, ic.value, ic.source);
+        if let Source::Recipe(id) = ic.source {
+            let r = index.recipes.get(&id).unwrap();
+            print_ingredients(index, costs, r, indent+1);
+        }
+    }
 }

@@ -138,7 +138,7 @@ fn main() -> Result<()> {
         println!("{}: {}", item.name, p.value);
         let output_price = index.prices.get(&item.id).unwrap();
         println!("\tSale: {} = {} @{}", recipe.output_item_count * output_price.buys.unit_price, recipe.output_item_count, output_price.buys.unit_price);
-        print_costs(&index, &costs, &recipe, 1);
+        print_costs(&index, &costs, &recipe, 1, 1);
         println!("\tCost: {}", cost.value);
         let mut materials = index.materials.clone();
         let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
@@ -168,10 +168,10 @@ fn special(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
     });
 }
 
-fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, indent: usize) {
+fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, indent: usize, count: i32) {
     for i in &recipe.ingredients {
-        let ii = index.items.get(&i.item_id).expect(&format!("no item for {:?}", i.item_id));
-        let ic = costs.get(&i.item_id).expect(&format!("no cost for {}", ii.name));
+        let ii = index.items.get(&i.item_id).unwrap();
+        let ic = costs.get(&i.item_id).unwrap();
         let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
         let tabs = tabs.join("");
         let source = match ic.source {
@@ -179,10 +179,11 @@ fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, in
             Source::Special => " <<SPECIAL>>",
             _ => "",
         };
-        println!("{}{} : {} = {} @{}{}", tabs, ii.name, i.count * ic.value, i.count, ic.value, source);
+        let total = i.count * count;
+        println!("{}{} * {} @{} = {}{}", tabs, total, ii.name, ic.value, total * ic.value, source);
         if let Source::Recipe(id) = ic.source {
             let r = index.recipes.get(&id).unwrap();
-            print_costs(index, costs, r, indent+1);
+            print_costs(index, costs, r, indent+1, total);
         }
     }
 }

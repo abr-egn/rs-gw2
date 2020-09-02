@@ -143,9 +143,9 @@ fn main() -> Result<()> {
         let recipe = index.recipes.get(&p.id).unwrap();
         let item = index.items.get(&recipe.output_item_id).unwrap();
         let cost = costs.get(&item.id).unwrap();
-        println!("{}: {}", item.name, money(p.value));
+        println!("{} : {}", item.name, money(p.value));
         let output_price = index.prices.get(&item.id).unwrap();
-        println!("\tSale: {} = {} @{}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
+        println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
         print_costs(&index, &costs, &recipe, 1, 1);
         println!("\tCost: {}", money(cost.value));
         let mut materials = index.materials.clone();
@@ -183,12 +183,12 @@ fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, in
         let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
         let tabs = tabs.join("");
         let source = match ic.source {
-            Source::Unknown => " <<UNKNOWN>>",
-            Source::Special => " <<SPECIAL>>",
+            Source::Unknown => " [UNKNOWN]",
+            Source::Special => " [SPECIAL]",
             _ => "",
         };
         let total = i.count * count;
-        println!("{}{} * {} @{} = {}{}", tabs, total, ii.name, money(ic.value), money(total * ic.value), source);
+        println!("{}{} : {} @ {} = {}{}", tabs, ii.name, total, money(ic.value), money(total * ic.value), source);
         if let Source::Recipe(id) = ic.source {
             let r = index.recipes.get(&id).unwrap();
             print_costs(index, costs, r, indent+1, total);
@@ -219,8 +219,13 @@ fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut
 }
 
 fn money(amount: i32) -> String {
-    let copper = amount % 100;
-    let silver = (amount / 100) % 100;
-    let gold = amount / 10000;
-    format!("{}g {}s {}c", gold, silver, copper)
+    let mut out = String::new();
+    if amount >= 10000 {
+        out.push_str(&format!("{}g ", amount / 10000));
+    }
+    if amount >= 100 {
+        out.push_str(&format!("{}s ", (amount / 100) % 100));
+    }
+    out.push_str(&format!("{}c ", amount % 100));
+    out
 }

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::{Write, stdin};
 
 #[macro_use]
 mod error;
@@ -36,11 +37,13 @@ struct Profit {
 const UNKNOWN_COST: i32 = 0;
 const MIN_PROFIT: i32 = 10000;
 
+type Costs = HashMap<ItemId, Cost>;
+
 fn main() -> Result<()> {
     let mut client = Client::new();
     let index = Index::new(&mut client)?;
 
-    let mut costs: HashMap<ItemId, Cost> = HashMap::new();
+    let mut costs: Costs = HashMap::new();
     
     // Thermocatalytic Reagent
     vendor(&mut costs, 46747, 150);
@@ -138,32 +141,71 @@ fn main() -> Result<()> {
     println!("profits: {}", profits.len());
 
     println!("");
-    for p in profits {
+    for p in &profits {
         if p.value < MIN_PROFIT { break }
-        let recipe = index.recipes.get(&p.id).unwrap();
-        let item = index.items.get(&recipe.output_item_id).unwrap();
-        let cost = costs.get(&item.id).unwrap();
-        println!("{} : {}", item.name, money(p.value));
-        let output_price = index.prices.get(&item.id).unwrap();
-        println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
-        print_costs(&index, &costs, &recipe, 1, 1);
-        println!("\tCost: {}", money(cost.value));
-        let mut materials = index.materials.clone();
-        let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
-        let mut shop_cost = 0;
-        for (id, count) in &ingredients {
-            let c = costs.get(id).unwrap();
-            shop_cost += count * c.value;
+        print_profit(&index, &costs, &p);
+    }
+
+    let mut line = String::new();
+    loop {
+        print!("> ");
+        std::io::stdout().flush()?;
+        line.clear();
+        stdin().read_line(&mut line)?;
+        let line = line.trim();
+        if line == "exit" { break }
+        if line.starts_with("profit ") {
+            let id_str = line.strip_prefix("profit ").unwrap();
+            let id = match id_str.parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(id) => ItemId(id),
+            };
+            for p in &profits {
+                let r = index.recipes.get(&p.id).unwrap();
+                if r.output_item_id == id {
+                    print_profit(&index, &costs, p);
+                }
+            }
         }
-        println!("\tShopping: {}", money(shop_cost));
-        for (id, count) in &ingredients {
-            let item = index.items.get(id).unwrap();
-            let c = costs.get(id).unwrap();
-            println!("\t\t{} : {} @ {} = {}", item.name, count, money(c.value), money(count * c.value));
+        if line.starts_with("cost ") {
+            let id_str = line.strip_prefix("cost ").unwrap();
+            let id = match id_str.parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(id) => ItemId(id),
+            };
+            if !costs.contains_key(&id) {
+                println!("no cost entry");
+                continue
+            }
+            print_cost(&index, &costs, &id, 0, 1);
         }
     }
 
     Ok(())
+}
+
+fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
+    let recipe = index.recipes.get(&p.id).unwrap();
+    let item = index.items.get(&recipe.output_item_id).unwrap();
+    let cost = costs.get(&item.id).unwrap();
+    println!("{} : {}", item.name, money(p.value));
+    let output_price = index.prices.get(&item.id).unwrap();
+    println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
+    print_costs(&index, &costs, &recipe, 1, 1);
+    println!("\tCost: {}", money(cost.value));
+    let mut materials = index.materials.clone();
+    let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
+    let mut shop_cost = 0;
+    for (id, count) in &ingredients {
+        let c = costs.get(id).unwrap();
+        shop_cost += count * c.value;
+    }
+    println!("\tShopping: {}", money(shop_cost));
+    for (id, count) in &ingredients {
+        let item = index.items.get(id).unwrap();
+        let c = costs.get(id).unwrap();
+        println!("\t\t{} : {} @ {} = {}", item.name, count, money(c.value), money(count * c.value));
+    }
 }
 
 fn vendor(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
@@ -182,23 +224,27 @@ fn special(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
     });
 }
 
-fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, indent: usize, count: i32) {
+fn print_costs(index: &Index, costs: &Costs, recipe: &Recipe, indent: usize, count: i32) {
     for i in &recipe.ingredients {
-        let ii = index.items.get(&i.item_id).unwrap();
-        let ic = costs.get(&i.item_id).unwrap();
-        let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
-        let tabs = tabs.join("");
-        let source = match ic.source {
-            Source::Unknown => " [UNKNOWN]",
-            Source::Special => " [SPECIAL]",
-            _ => "",
-        };
         let total = i.count * count;
-        println!("{}{} : {} @ {} = {}{}", tabs, ii.name, total, money(ic.value), money(total * ic.value), source);
-        if let Source::Recipe(id) = ic.source {
-            let r = index.recipes.get(&id).unwrap();
-            print_costs(index, costs, r, indent+1, total);
-        }
+        print_cost(index, costs, &i.item_id, indent, total);
+    }
+}
+
+fn print_cost(index: &Index, costs: &Costs, id: &ItemId, indent: usize, count: i32) {
+    let ic = costs.get(id).unwrap();
+    let ii = index.items.get(id).unwrap();
+    let source = match ic.source {
+        Source::Unknown => " [UNKNOWN]",
+        Source::Special => " [SPECIAL]",
+        _ => "",
+    };
+    let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
+    let tabs = tabs.join("");
+    println!("{}{} : {} @ {} = {}{}", tabs, ii.name, count, money(ic.value), money(count * ic.value), source);
+    if let Source::Recipe(id) = ic.source {
+        let r = index.recipes.get(&id).unwrap();
+        print_costs(index, costs, r, indent+1, count);
     }
 }
 

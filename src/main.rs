@@ -150,10 +150,16 @@ fn main() -> Result<()> {
         println!("\tCost: {}", money(cost.value));
         let mut materials = index.materials.clone();
         let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
-        println!("\tShopping:");
+        let mut shop_cost = 0;
+        for (id, count) in &ingredients {
+            let c = costs.get(id).unwrap();
+            shop_cost += count * c.value;
+        }
+        println!("\tShopping: {}", money(shop_cost));
         for (id, count) in &ingredients {
             let item = index.items.get(id).unwrap();
-            println!("\t\t{} : {}", item.name, count);
+            let c = costs.get(id).unwrap();
+            println!("\t\t{} : {} @ {} = {}", item.name, count, money(c.value), money(count * c.value));
         }
     }
 
@@ -226,6 +232,6 @@ fn money(amount: i32) -> String {
     if amount >= 100 {
         out.push_str(&format!("{}s ", (amount / 100) % 100));
     }
-    out.push_str(&format!("{}c ", amount % 100));
+    out.push_str(&format!("{}c", amount % 100));
     out
 }

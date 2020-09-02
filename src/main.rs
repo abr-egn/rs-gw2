@@ -117,6 +117,7 @@ fn main() -> Result<()> {
     let mut profit_ids = HashSet::new();
     for r in index.recipes.values() {
         let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
+        if cost.source == Source::Auction { continue }
         let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
         let sale = price.buys.unit_price * r.output_item_count;
         let sale = sale - (0.15 * (sale as f32).ceil()) as i32;

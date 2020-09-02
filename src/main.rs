@@ -15,6 +15,7 @@ enum Source {
     Vendor,
     Recipe(RecipeId),
     Auction,
+    AccountBound,
     Unknown,
 }
 
@@ -22,6 +23,12 @@ enum Source {
 struct Cost {
     id: ItemId,
     source: Source,
+    value: i32,
+}
+
+#[derive(Debug, Clone)]
+struct Profit {
+    id: RecipeId,
     value: i32,
 }
 
@@ -53,7 +60,13 @@ fn main() -> Result<()> {
                 let (source, value) = if let Some(price) = index.prices.get(&iid) {
                     (Source::Auction, price.sells.unit_price)
                 } else {
-                    (Source::Unknown, 0)
+                    let items = client.items(&[iid])?;
+                    let item = &items[0];
+                    if item.flags.iter().any(|f| f == "AccountBound") {
+                        (Source::AccountBound, 0)
+                    } else {
+                        (Source::Unknown, 0)
+                    }
                 };
                 costs.insert(iid, Cost { id: iid, source, value });
             }
@@ -84,38 +97,38 @@ fn main() -> Result<()> {
         }
     }
     println!("costs: {}", costs.len());
-
-    /*
-    let mut profits = vec![];
-    let mut profit_ids = HashSet::<ItemId>::new();
-    'recipes: for (_, r) in &index.recipes {
-        let sale_total = if let Some(p) = index.costs.get(&r.output_item_id) {
-            p.buys.unit_price * r.output_item_count
-        } else { continue };
-        let sale_total = sale_total - (0.15 * (sale_total as f32).ceil()) as i32;
-        let mut craft_total = 0;
-        for i in &r.ingredients {
-            if let Some(p) = index.costs.get(&i.item_id) {
-                craft_total += p.sells.unit_price * i.count;
-            } else { continue 'recipes };
-        }
-        if sale_total > craft_total {
-            profits.push(Profit {
-                id: r.output_item_id,
-                recipe: r.id,
-                sale_total, craft_total,
-            });
-            profit_ids.insert(r.output_item_id);
-            for i in &r.ingredients {
-                profit_ids.insert(i.item_id);
-            }
+    let mut unknown = vec![];
+    for (id, cost) in &costs {
+        if cost.source == Source::Unknown {
+            unknown.push(*id);
         }
     }
-    profits.sort_by(|b, a|
-        (a.sale_total - a.craft_total).cmp(&(b.sale_total - b.craft_total))
-    );
+    println!("unknown: {}", unknown.len());
+
+    if !unknown.is_empty() {
+        let items = client.items(&unknown)?;
+        for item in items {
+            println!("\t{}", item.name);
+        }
+    }
+
+    let mut profits = vec![];
+    for r in index.recipes.values() {
+        let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
+        let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
+        let sale = price.buys.unit_price * r.output_item_count;
+        let sale = sale - (0.15 * (sale as f32).ceil()) as i32;
+        if sale > cost.value {
+            profits.push(Profit {
+                id: r.id,
+                value: sale - cost.value,
+            })
+        }
+    }
+    profits.sort_by(|b, a|a.value.cmp(&b.value));
     println!("profits: {}", profits.len());
 
+    /*
     let iids_vec: Vec<ItemId> = profit_ids.iter().cloned().collect();
     let mut items = HashMap::<ItemId, Item>::new();
     for ids in iids_vec.chunks(50) {

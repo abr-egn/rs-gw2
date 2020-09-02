@@ -92,8 +92,4 @@ impl Index {
 
         Ok(Index{recipes, recipes_by_item, items, prices, materials})
     }
-
-    pub fn material(&self, id: &ItemId) -> i32 {
-        self.materials.get(id).cloned().unwrap_or(0)
-    }
 }

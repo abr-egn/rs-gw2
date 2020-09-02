@@ -6,7 +6,7 @@ mod error;
 mod client;
 mod index;
 
-use crate::client::{Client, ItemId, Recipe, RecipeId, Ingredient};
+use crate::client::{Client, ItemId, Recipe, RecipeId};
 use crate::error::Result;
 use crate::index::Index;
 
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
         println!("\tCost: {}", cost.value);
         let mut materials = index.materials.clone();
         let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
-        println!("\tAll ingredients:");
+        println!("\tShopping:");
         for (id, count) in &ingredients {
             let item = index.items.get(id).unwrap();
             println!("\t\t{} : {}", item.name, count);
@@ -199,7 +199,7 @@ fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut
     if let Source::Recipe(rid) = costs.get(id).unwrap().source {
         let recipe = index.recipes.get(&rid).unwrap();
         for ing in &recipe.ingredients {
-            for (id, count) in all_ingredients(index, costs, materials, &ing.item_id, count) {
+            for (id, count) in all_ingredients(index, costs, materials, &ing.item_id, needed * ing.count) {
                 *out.entry(id).or_insert(0) += count;
             }
         }

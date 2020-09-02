@@ -1,7 +1,8 @@
 use std::time::{Duration, Instant};
 
 use reqwest::{self, StatusCode};
-use serde::de::DeserializeOwned;
+use serde::Deserialize;
+use serde::de::{DeserializeOwned};
 
 use crate::error::{Result};
 
@@ -20,7 +21,27 @@ impl Client {
         }
     }
 
-    pub fn fetch<Out>(
+    pub fn characters(&mut self) -> Result<Vec<String>> {
+        self.fetch(true, "characters")
+    }
+
+    pub fn character_recipes(&mut self, name: &str) -> Result<CharacterRecipes> {
+        self.fetch(true, &format!("characters/{}/recipes", name))
+    }
+
+    pub fn recipes(&mut self, ids: &[RecipeId]) -> Result<Vec<Recipe>> {
+        self.fetch(false, &format!("recipes?ids={}", ids_str(ids)))
+    }
+
+    pub fn prices(&mut self, ids: &[ItemId]) -> Result<Vec<Price>> {
+        self.fetch(false, &format!("commerce/prices?ids={}", ids_str(ids)))
+    }
+
+    pub fn items(&mut self, ids: &[ItemId]) -> Result<Vec<Item>> {
+        self.fetch(false, &format!("items?ids={}", ids_str(ids)))
+    }
+
+    fn fetch<Out>(
         &mut self,
         auth: bool,
         path: &str,
@@ -56,4 +77,89 @@ impl Client {
 
         Ok(res.json()?)
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CharacterRecipes {
+    pub recipes: Vec<RecipeId>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Ingredient {
+    pub item_id: ItemId,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Recipe {
+    #[serde(rename = "type")]
+    pub typ: String,
+    pub output_item_id: ItemId,
+    pub output_item_count: i32,
+    pub min_rating: i32,
+    pub time_to_craft_ms: i32,
+    pub disciplines: Vec<String>,
+    pub flags: Vec<String>,
+    pub ingredients: Vec<Ingredient>,
+    pub id: RecipeId,
+    pub chat_link: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Price {
+    pub id: ItemId,
+    pub whitelisted: bool,
+    pub buys: Order,
+    pub sells: Order,
+    pub vendor: Option<()>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Order {
+    pub quantity: i32,
+    pub unit_price: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Item {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "type")]
+    pub typ: String,
+    pub level: i32,
+    pub rarity: String,
+    pub vendor_value: i32,
+    pub game_types: Vec<String>,
+    pub flags: Vec<String>,
+    pub restrictions: Vec<String>,
+    pub id: ItemId,
+    pub chat_link: String,
+    pub icon: String,
+}
+
+#[repr(transparent)]
+#[serde(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
+pub struct RecipeId(pub i32);
+
+#[repr(transparent)]
+#[serde(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
+pub struct ItemId(pub i32);
+
+trait AsId {
+    fn as_id(&self) -> i32;
+}
+
+impl AsId for ItemId {
+    fn as_id(&self) -> i32 { self.0 }
+}
+
+impl AsId for RecipeId {
+    fn as_id(&self) -> i32 { self.0 }
+}
+
+fn ids_str<T: AsId>(ids: &[T]) -> String {
+    let id_strs: Vec<String> = ids.iter().map(|id| format!("{}", id.as_id())).collect();
+    id_strs.join(",")
 }

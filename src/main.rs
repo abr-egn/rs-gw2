@@ -6,9 +6,9 @@ mod error;
 mod client;
 mod index;
 
-use crate::client::Client;
+use crate::client::{Client, Item, ItemId, RecipeId};
 use crate::error::Result;
-use crate::index::{Index, ItemId, RecipeId, Item, ids_str};
+use crate::index::Index;
 
 #[derive(Debug, Clone)]
 struct Profit {
@@ -62,7 +62,7 @@ fn main() -> Result<()> {
     let iids_vec: Vec<ItemId> = profit_ids.iter().cloned().collect();
     let mut items = HashMap::<ItemId, Item>::new();
     for ids in iids_vec.chunks(50) {
-        let is: Vec<Item> = client.fetch(false, &format!("items?ids={}", ids_str(ids)))?;
+        let is: Vec<Item> = client.items(ids)?;
         for i in is {
             items.insert(i.id, i);
         }

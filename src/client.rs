@@ -41,6 +41,10 @@ impl Client {
         self.fetch(false, &format!("items?ids={}", ids_str(ids)))
     }
 
+    pub fn materials(&mut self) -> Result<Vec<Material>> {
+        self.fetch(true, "account/materials")
+    }
+
     fn fetch<Out>(
         &mut self,
         auth: bool,
@@ -162,4 +166,12 @@ impl AsId for RecipeId {
 fn ids_str<T: AsId>(ids: &[T]) -> String {
     let id_strs: Vec<String> = ids.iter().map(|id| format!("{}", id.as_id())).collect();
     id_strs.join(",")
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Material {
+    pub id: ItemId,
+    pub category: i32,
+    pub binding: Option<String>,
+    pub count: i32,
 }

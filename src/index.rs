@@ -9,6 +9,7 @@ pub struct Index {
     pub recipes_by_item: HashMap<ItemId, Recipe>,
     pub items: HashMap<ItemId, Item>,
     pub prices: HashMap<ItemId, Price>,
+    pub materials: HashMap<ItemId, i32>,
 }
 
 impl Index {
@@ -82,6 +83,17 @@ impl Index {
         println!("");
         println!("retrieved prices: {}", prices.len());
 
-        Ok(Index{recipes, recipes_by_item, items, prices})
+        let mut materials = HashMap::new();
+        let ms = client.materials()?;
+        println!("materials: {}", ms.len());
+        for m in ms {
+            materials.insert(m.id, m.count);
+        }
+
+        Ok(Index{recipes, recipes_by_item, items, prices, materials})
+    }
+
+    pub fn material(&self, id: &ItemId) -> i32 {
+        self.materials.get(id).cloned().unwrap_or(0)
     }
 }

@@ -6,7 +6,7 @@ mod error;
 mod client;
 mod index;
 
-use crate::client::{Client, ItemId, Recipe, RecipeId};
+use crate::client::{Client, ItemId, Recipe, RecipeId, Ingredient};
 use crate::error::Result;
 use crate::index::Index;
 
@@ -33,13 +33,14 @@ struct Profit {
 }
 
 const UNKNOWN_COST: i32 = 0;
-const MIN_PROFIT: i32 = 5000;
+const MIN_PROFIT: i32 = 10000;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
     let index = Index::new(&mut client)?;
 
     let mut costs: HashMap<ItemId, Cost> = HashMap::new();
+    
     // Thermocatalytic Reagent
     vendor(&mut costs, 46747, 150);
     // Spool of Gossamer Thread
@@ -54,6 +55,11 @@ fn main() -> Result<()> {
     vendor(&mut costs, 19789, 16);
     // Spool of Jute Thread
     vendor(&mut costs, 19792, 8);
+    // Milling Basin
+    vendor(&mut costs, 76839, 56);
+
+    // Obsidian Shard
+    special(&mut costs, 19925, 10000);
 
     let mut queue: VecDeque<ItemId> = index.items.keys().cloned().collect();
     'queue: while let Some(iid) = queue.pop_front() {
@@ -132,8 +138,15 @@ fn main() -> Result<()> {
         println!("{}: {}", item.name, p.value);
         let output_price = index.prices.get(&item.id).unwrap();
         println!("\tSale: {} = {} @{}", recipe.output_item_count * output_price.buys.unit_price, recipe.output_item_count, output_price.buys.unit_price);
-        print_ingredients(&index, &costs, &recipe, 1);
+        print_costs(&index, &costs, &recipe, 1);
         println!("\tCost: {}", cost.value);
+        let mut materials = index.materials.clone();
+        let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
+        println!("\tAll ingredients:");
+        for (id, count) in &ingredients {
+            let item = index.items.get(id).unwrap();
+            println!("\t\t{} : {}", item.name, count);
+        }
     }
 
     Ok(())
@@ -155,7 +168,7 @@ fn special(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
     });
 }
 
-fn print_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, indent: usize) {
+fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, indent: usize) {
     for i in &recipe.ingredients {
         let ii = index.items.get(&i.item_id).expect(&format!("no item for {:?}", i.item_id));
         let ic = costs.get(&i.item_id).expect(&format!("no cost for {}", ii.name));
@@ -169,7 +182,29 @@ fn print_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Reci
         println!("{}{} : {} = {} @{}{}", tabs, ii.name, i.count * ic.value, i.count, ic.value, source);
         if let Source::Recipe(id) = ic.source {
             let r = index.recipes.get(&id).unwrap();
-            print_ingredients(index, costs, r, indent+1);
+            print_costs(index, costs, r, indent+1);
         }
     }
+}
+
+fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut HashMap<ItemId, i32>, id: &ItemId, count: i32) -> HashMap<ItemId, i32> {
+    let mut out = HashMap::new();
+    let has = materials.get(id).cloned().unwrap_or(0);
+    let used = std::cmp::min(count, has);
+    if used > 0 {
+        *materials.get_mut(id).unwrap() -= used;
+    }
+    let needed = count - used;
+    if needed <= 0 { return HashMap::new(); }
+    if let Source::Recipe(rid) = costs.get(id).unwrap().source {
+        let recipe = index.recipes.get(&rid).unwrap();
+        for ing in &recipe.ingredients {
+            for (id, count) in all_ingredients(index, costs, materials, &ing.item_id, count) {
+                *out.entry(id).or_insert(0) += count;
+            }
+        }
+    } else {
+        out.insert(*id, needed);
+    }
+    out
 }

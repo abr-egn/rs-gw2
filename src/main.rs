@@ -6,7 +6,7 @@ mod error;
 mod client;
 mod index;
 
-use crate::client::{Client, ItemId, RecipeId};
+use crate::client::{Client, Item, ItemId, RecipeId};
 use crate::error::Result;
 use crate::index::Index;
 
@@ -113,6 +113,7 @@ fn main() -> Result<()> {
     }
 
     let mut profits = vec![];
+    let mut profit_ids = HashSet::new();
     for r in index.recipes.values() {
         let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
         let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
@@ -122,13 +123,16 @@ fn main() -> Result<()> {
             profits.push(Profit {
                 id: r.id,
                 value: sale - cost.value,
-            })
+            });
+            profit_ids.insert(r.output_item_id);
+            for ing in &r.ingredients {
+                profit_ids.insert(ing.item_id);
+            }
         }
     }
     profits.sort_by(|b, a|a.value.cmp(&b.value));
     println!("profits: {}", profits.len());
 
-    /*
     let iids_vec: Vec<ItemId> = profit_ids.iter().cloned().collect();
     let mut items = HashMap::<ItemId, Item>::new();
     for ids in iids_vec.chunks(50) {
@@ -140,23 +144,26 @@ fn main() -> Result<()> {
 
     println!("");
     for p in profits {
-        let item = items.get(&p.id).unwrap();
-        println!("{}: {}", item.name, p.sale_total - p.craft_total);
-        let r = index.recipes.get(&p.recipe).unwrap();
-        let output_price = index.costs.get(&p.id).unwrap();
-        println!("\tSale: {} = {} @{}", p.sale_total, r.output_item_count, output_price.buys.unit_price);
-        for i in &r.ingredients {
+        let recipe = index.recipes.get(&p.id).unwrap();
+        let item = items.get(&recipe.output_item_id).unwrap();
+        let cost = costs.get(&item.id).unwrap();
+        println!("{}: {}", item.name, p.value);
+        let output_price = index.prices.get(&item.id).unwrap();
+        println!("\tSale: {} = {} @{}", recipe.output_item_count * output_price.buys.unit_price, recipe.output_item_count, output_price.buys.unit_price);
+        for i in &recipe.ingredients {
             let ii = items.get(&i.item_id).unwrap();
-            let ip = index.costs.get(&i.item_id).unwrap();
-            let mut vendor = "";
-            if ip.vendor.is_some() {
-                vendor = " [vendor]";
-            }
-            println!("\t{}: {} = {} @{}{}", ii.name, i.count * ip.sells.unit_price, i.count, ip.sells.unit_price, vendor);
+            let ic = costs.get(&i.item_id).unwrap();
+            let source = match ic.source {
+                Source::AccountBound => "account bound",
+                Source::Auction => "auction",
+                Source::Recipe(_) => "recipe",
+                Source::Unknown => "unknown",
+                Source::Vendor => "vendor",
+            };
+            println!("\t{}: {} = {} @{} [{}]", ii.name, i.count * ic.value, i.count, ic.value, source);
         }
-        println!("\tTotal: {}", p.craft_total);
+        println!("\tCost: {}", cost.value);
     }
-    */
 
     Ok(())
 }

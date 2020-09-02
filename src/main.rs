@@ -32,7 +32,8 @@ struct Profit {
     value: i32,
 }
 
-const UNKNOWN_COST: i32 = 100000;
+const UNKNOWN_COST: i32 = 0;
+const MIN_PROFIT: i32 = 5000;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
@@ -124,7 +125,7 @@ fn main() -> Result<()> {
 
     println!("");
     for p in profits {
-        if p.value < 10000 { break }
+        if p.value < MIN_PROFIT { break }
         let recipe = index.recipes.get(&p.id).unwrap();
         let item = index.items.get(&recipe.output_item_id).unwrap();
         let cost = costs.get(&item.id).unwrap();
@@ -160,7 +161,12 @@ fn print_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Reci
         let ic = costs.get(&i.item_id).expect(&format!("no cost for {}", ii.name));
         let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
         let tabs = tabs.join("");
-        println!("{}{}: {} = {} @{} [{:?}]", tabs, ii.name, i.count * ic.value, i.count, ic.value, ic.source);
+        let source = match ic.source {
+            Source::Unknown => " <<UNKNOWN>>",
+            Source::Special => " <<SPECIAL>>",
+            _ => "",
+        };
+        println!("{}{} : {} = {} @{}{}", tabs, ii.name, i.count * ic.value, i.count, ic.value, source);
         if let Source::Recipe(id) = ic.source {
             let r = index.recipes.get(&id).unwrap();
             print_ingredients(index, costs, r, indent+1);

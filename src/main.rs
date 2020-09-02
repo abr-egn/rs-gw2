@@ -29,6 +29,7 @@ struct Cost {
 #[derive(Debug, Clone)]
 struct Profit {
     id: RecipeId,
+    sale: i32,
     value: i32,
 }
 
@@ -124,6 +125,7 @@ fn main() -> Result<()> {
         if sale > cost.value {
             profits.push(Profit {
                 id: r.id,
+                sale,
                 value: sale - cost.value,
             });
             profit_ids.insert(r.output_item_id);
@@ -141,11 +143,11 @@ fn main() -> Result<()> {
         let recipe = index.recipes.get(&p.id).unwrap();
         let item = index.items.get(&recipe.output_item_id).unwrap();
         let cost = costs.get(&item.id).unwrap();
-        println!("{}: {}", item.name, p.value);
+        println!("{}: {}", item.name, money(p.value));
         let output_price = index.prices.get(&item.id).unwrap();
-        println!("\tSale: {} = {} @{}", recipe.output_item_count * output_price.buys.unit_price, recipe.output_item_count, output_price.buys.unit_price);
+        println!("\tSale: {} = {} @{}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
         print_costs(&index, &costs, &recipe, 1, 1);
-        println!("\tCost: {}", cost.value);
+        println!("\tCost: {}", money(cost.value));
         let mut materials = index.materials.clone();
         let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
         println!("\tShopping:");
@@ -186,7 +188,7 @@ fn print_costs(index: &Index, costs: &HashMap<ItemId, Cost>, recipe: &Recipe, in
             _ => "",
         };
         let total = i.count * count;
-        println!("{}{} * {} @{} = {}{}", tabs, total, ii.name, ic.value, total * ic.value, source);
+        println!("{}{} * {} @{} = {}{}", tabs, total, ii.name, money(ic.value), money(total * ic.value), source);
         if let Source::Recipe(id) = ic.source {
             let r = index.recipes.get(&id).unwrap();
             print_costs(index, costs, r, indent+1, total);
@@ -214,4 +216,11 @@ fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut
         out.insert(*id, needed);
     }
     out
+}
+
+fn money(amount: i32) -> String {
+    let copper = amount % 100;
+    let silver = (amount / 100) % 100;
+    let gold = amount / 10000;
+    format!("{}g {}s {}c", gold, silver, copper)
 }

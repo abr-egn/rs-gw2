@@ -59,7 +59,12 @@ fn main() -> Result<()> {
     vendor(&mut costs, 76839, 56);
 
     // Obsidian Shard
-    special(&mut costs, 19925, 10000);
+    // 5 for 1 Guild Commendation daily at the Guild Trader
+    // Guild Commendation ~= 50s
+    special(&mut costs, 19925, 1000);
+    // Charged Quartz Crystal
+    // 25 Quartz Crystals at a place of power daily
+    special(&mut costs, 43772, 25 * index.prices.get(&ItemId(43773)).unwrap().sells.unit_price);
 
     let mut queue: VecDeque<ItemId> = index.items.keys().cloned().collect();
     'queue: while let Some(iid) = queue.pop_front() {

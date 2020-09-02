@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-use crate::client::{CharacterRecipes, Client, ItemId, Order, Price, Recipe, RecipeId};
+use crate::client::{CharacterRecipes, Client, ItemId, Price, Recipe, RecipeId};
 use crate::error::Result;
 
 pub struct Index {
     pub recipes: HashMap<RecipeId, Recipe>,
+    pub recipes_by_item: HashMap<ItemId, Recipe>,
+    pub all_items: HashSet<ItemId>,
     pub prices: HashMap<ItemId, Price>,
 }
 
@@ -24,11 +26,13 @@ impl Index {
         println!("known recipes: {}", all_ids.len());
 
         let mut recipes = HashMap::new();
+        let mut recipes_by_item = HashMap::new();
         let id_vec: Vec<RecipeId> = all_ids.iter().cloned().collect();
         for ids in id_vec.chunks(50) {
             let rs: Vec<Recipe> = client.recipes(ids)?;
             for r in rs {
-                recipes.insert(r.id, r);
+                recipes.insert(r.id, r.clone());
+                recipes_by_item.insert(r.output_item_id, r);
             }
             print!(".");
             std::io::stdout().flush()?;
@@ -46,20 +50,6 @@ impl Index {
         println!("total items: {}", all_items.len());
     
         let mut prices = HashMap::<ItemId, Price>::new();
-        // Thermocatalytic Reagent
-        vendor(&mut prices, 46747, 150);
-        // Spool of Gossamer Thread
-        vendor(&mut prices, 19790, 64);
-        // Spool of Silk Thread
-        vendor(&mut prices, 19791, 48);
-        // Spool of Linen Thread
-        vendor(&mut prices, 19793, 32);
-        // Spool of Cotton Thread
-        vendor(&mut prices, 19794, 24);
-        // Spool of Wool Thread
-        vendor(&mut prices, 19789, 16);
-        // Spool of Jute Thread
-        vendor(&mut prices, 19792, 8);
     
         let pid_vec: Vec<ItemId> = all_items.iter().cloned().collect();
         for ids in pid_vec.chunks(50) {
@@ -79,16 +69,6 @@ impl Index {
         println!("");
         println!("retrieved prices: {}", prices.len());
 
-        Ok(Index{recipes, prices})
+        Ok(Index{recipes, recipes_by_item, all_items, prices})
     }
-}
-
-fn vendor(prices: &mut HashMap<ItemId, Price>, id: i32, price: i32) {
-    prices.insert(ItemId(id), Price {
-        id: ItemId(id),
-        whitelisted: true,
-        buys: Order { quantity: 0, unit_price: 0 },
-        sells: Order { quantity: 1, unit_price: price },
-        vendor: Some(()),
-    });
 }

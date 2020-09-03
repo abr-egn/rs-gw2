@@ -43,13 +43,13 @@ impl Profit {
 }
 
 const UNKNOWN_COST: i32 = 0;
-const MIN_PROFIT: i32 = 50000;
+const MIN_PROFIT: i32 = 5000;
 
 type Costs = HashMap<ItemId, Cost>;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
-    let index = Index::new(&mut client)?;
+    let index = Index::new(&mut client, true)?;
 
     let mut costs: Costs = HashMap::new();
     
@@ -177,13 +177,12 @@ fn main() -> Result<()> {
     profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
     println!("profits: {}", profits.len());
 
-    /*
     println!("");
     for p in &profits {
         if p.per_day() < MIN_PROFIT { break }
         print_profit(&index, &costs, &p);
     }
-    */
+    println!("");
 
     let mut line = String::new();
     loop {

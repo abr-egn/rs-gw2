@@ -13,26 +13,28 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new(client: &mut Client) -> Result<Index> {
-        /*
-        let names: Vec<String> = client.characters()?;
-        println!("{:?}", names);
-        let mut all_ids = HashSet::<RecipeId>::new();
-        for name in &names {
-            let r: CharacterRecipes = client.character_recipes(name)?;
-            println!("{}: {}", name, r.recipes.len());
-            for id in &r.recipes {
-                all_ids.insert(*id);
+    pub fn new(client: &mut Client, by_character: bool) -> Result<Index> {
+        let all_ids;
+        if by_character {
+            let names: Vec<String> = client.characters()?;
+            println!("{:?}", names);
+            let mut id_set = HashSet::<RecipeId>::new();
+            for name in &names {
+                let r: CharacterRecipes = client.character_recipes(name)?;
+                println!("{}: {}", name, r.recipes.len());
+                for id in &r.recipes {
+                    id_set.insert(*id);
+                }
             }
+            all_ids = id_set.iter().cloned().collect();
+        } else {
+            all_ids = client.all_recipes()?;
         }
-        */
-        let all_ids = client.all_recipes()?;
         println!("known recipes: {}", all_ids.len());
 
         let mut recipes = HashMap::new();
         let mut recipes_by_item = HashMap::new();
-        let id_vec: Vec<RecipeId> = all_ids.iter().cloned().collect();
-        for ids in id_vec.chunks(50) {
+        for ids in all_ids.chunks(50) {
             let rs: Vec<Recipe> = client.recipes(ids)?;
             for r in rs {
                 recipes.insert(r.id, r.clone());

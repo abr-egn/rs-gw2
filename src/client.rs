@@ -45,6 +45,10 @@ impl Client {
         self.fetch(true, "account/materials")
     }
 
+    pub fn all_recipes(&mut self) -> Result<Vec<RecipeId>> {
+        self.fetch(false, "recipes")
+    }
+
     fn fetch<Out>(
         &mut self,
         auth: bool,

@@ -14,6 +14,7 @@ pub struct Index {
 
 impl Index {
     pub fn new(client: &mut Client) -> Result<Index> {
+        /*
         let names: Vec<String> = client.characters()?;
         println!("{:?}", names);
         let mut all_ids = HashSet::<RecipeId>::new();
@@ -24,6 +25,8 @@ impl Index {
                 all_ids.insert(*id);
             }
         }
+        */
+        let all_ids = client.all_recipes()?;
         println!("known recipes: {}", all_ids.len());
 
         let mut recipes = HashMap::new();

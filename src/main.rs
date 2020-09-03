@@ -43,7 +43,7 @@ impl Profit {
 }
 
 const UNKNOWN_COST: i32 = 0;
-const MIN_PROFIT: i32 = 5000;
+const MIN_PROFIT: i32 = 50000;
 
 type Costs = HashMap<ItemId, Cost>;
 
@@ -77,6 +77,27 @@ fn main() -> Result<()> {
     // Charged Quartz Crystal
     // 25 Quartz Crystals at a place of power daily
     special(&mut costs, 43772, 25 * index.prices.get(&ItemId(43773)).unwrap().sells.unit_price);
+    // Plaguedoctor's Orichalcum-Imbued Inscription
+    // 2500 Volatile Magic + 50 Inscribed Shard ~= 3500 Volatile Magic
+    // https://gw2lunchbox.com/IstanShipments.html puts VM at ~40s per 250 (Trophy Shipment)
+    // for ~16c per 1 Volatile Magic
+    // * 3500 = 56000
+    special(&mut costs, 87809, 2*56000);
+    // Plaguedoctor's Intricate Gossamer Insignia
+    // 1250 Volatile Magic + 25 Inscribed Shard ~= 1750 Volatile Magic
+    // ~= 28000c
+    special(&mut costs, 88011, 2*28000);
+    // Branded Mass: 20 Volatile Magic ~= 320c
+    special(&mut costs, 89537, 320);
+    // Exquisite Serpentite Jewel
+    // It's a hassle to get - dwarven catacombs puzzle area daily chest.
+    special(&mut costs, 89696, 100000);
+    // Dungeon widgets
+    for (id, item) in &index.items {
+        if item.description.as_ref().map_or(false, |d| d == "An offering used in dungeon recipes.") {
+            special(&mut costs, id.0, 1000000);
+        }
+    }
 
     let mut queue: VecDeque<ItemId> = index.items.keys().cloned().collect();
     'queue: while let Some(iid) = queue.pop_front() {
@@ -128,6 +149,9 @@ fn main() -> Result<()> {
     let mut profits = vec![];
     let mut profit_ids = HashSet::new();
     for r in index.recipes.values() {
+        let item = if let Some(i) = index.items.get(&r.output_item_id) { i } else { continue };
+        if item.description.as_ref().map_or(false, |d| d.contains("used to craft the legendary")) { continue }
+        if item.name == "Guild Catapult" { continue }
         let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
         if cost.source == Source::Auction { continue }
         let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
@@ -153,11 +177,13 @@ fn main() -> Result<()> {
     profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
     println!("profits: {}", profits.len());
 
+    /*
     println!("");
     for p in &profits {
-        if p.value < MIN_PROFIT { break }
+        if p.per_day() < MIN_PROFIT { break }
         print_profit(&index, &costs, &p);
     }
+    */
 
     let mut line = String::new();
     loop {
@@ -191,6 +217,17 @@ fn main() -> Result<()> {
                 continue
             }
             print_cost(&index, &costs, &id, 0, 1);
+        }
+        if line.starts_with("min profit ") {
+            let profit_str = line.strip_prefix("min profit ").unwrap();
+            let profit = match profit_str.parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(n) => n,
+            };
+            for p in &profits {
+                if p.per_day() < profit { break }
+                print_profit(&index, &costs, &p);
+            }
         }
     }
 

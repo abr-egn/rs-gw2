@@ -30,8 +30,16 @@ struct Cost {
 #[derive(Debug, Clone)]
 struct Profit {
     id: RecipeId,
+    days: i32,
     sale: i32,
     value: i32,
+}
+
+impl Profit {
+    fn per_day(&self) -> i32 {
+        let d = std::cmp::max(1, self.days) as f32;
+        ((self.value as f32) / d).floor() as i32
+    }
 }
 
 const UNKNOWN_COST: i32 = 0;
@@ -124,10 +132,15 @@ fn main() -> Result<()> {
         if cost.source == Source::Auction { continue }
         let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
         let sale = price.buys.unit_price * r.output_item_count;
-        let sale = sale - (0.15 * (sale as f32).ceil()) as i32;
+        let sale = sale - ((0.15 * (sale as f32)).ceil()) as i32;
+        let mut max_days = 0;
+        for d in days(&index, &costs, &r.output_item_id).values() {
+            max_days = std::cmp::max(max_days, *d);
+        }
         if sale > cost.value {
             profits.push(Profit {
                 id: r.id,
+                days: max_days,
                 sale,
                 value: sale - cost.value,
             });
@@ -137,7 +150,7 @@ fn main() -> Result<()> {
             }
         }
     }
-    profits.sort_by(|b, a|a.value.cmp(&b.value));
+    profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
     println!("profits: {}", profits.len());
 
     println!("");
@@ -188,7 +201,7 @@ fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
     let recipe = index.recipes.get(&p.id).unwrap();
     let item = index.items.get(&recipe.output_item_id).unwrap();
     let cost = costs.get(&item.id).unwrap();
-    println!("{} : {}", item.name, money(p.value));
+    println!("{} : {} ({} over {} days)", item.name, money(p.per_day()), money(p.value), p.days);
     let output_price = index.prices.get(&item.id).unwrap();
     println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
     print_costs(&index, &costs, &recipe, 1, 1);
@@ -279,5 +292,39 @@ fn money(amount: i32) -> String {
         out.push_str(&format!("{}s ", (amount / 100) % 100));
     }
     out.push_str(&format!("{}c", amount % 100));
+    out
+}
+
+fn is_daily(id: &ItemId) -> bool {
+    match id.0 {
+        // Charged Quartz Crystal
+        43772 => true,
+        // Glob of Elder Spirit Residue
+        46744 => true,
+        // Lump of Mithrillium
+        46742 => true,
+        // Spool of Silk Weaving Thread
+        46740 => true,
+        // Spool of Thick Elonian Cord
+        46745 => true,
+        _ => false,
+    }
+}
+
+fn days(index: &Index, costs: &Costs, id: &ItemId) -> HashMap<ItemId, i32> {
+    if is_daily(id) {
+        let mut out = HashMap::new();
+        out.insert(*id, 1);
+        return out;
+    }
+    let cost = costs.get(id).unwrap();
+    let rid = if let Source::Recipe(rid) = cost.source { rid } else { return HashMap::new() };
+    let recipe = index.recipes.get(&rid).unwrap();
+    let mut out = HashMap::new();
+    for ing in &recipe.ingredients {
+        for (id, count) in days(index, costs, &ing.item_id) {
+            *out.entry(id).or_insert(0) += count * ing.count;
+        }
+    }
     out
 }

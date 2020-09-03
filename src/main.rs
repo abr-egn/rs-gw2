@@ -43,7 +43,7 @@ impl Profit {
 }
 
 const UNKNOWN_COST: i32 = 0;
-const MIN_PROFIT: i32 = 5000;
+const MIN_PROFIT: i32 = 10000;
 
 type Costs = HashMap<ItemId, Cost>;
 

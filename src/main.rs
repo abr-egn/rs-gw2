@@ -92,6 +92,16 @@ fn main() -> Result<()> {
     // Exquisite Serpentite Jewel
     // It's a hassle to get - dwarven catacombs puzzle area daily chest.
     special(&mut costs, 89696, 100000);
+    // Bottle of Airship Oil
+    // Handwave
+    special(&mut costs, 69434, 1000);
+    // Pile of Auric Dust
+    // Handwave
+    special(&mut costs, 69432, 1000);
+    // Ley Line Spark
+    // Handwave
+    special(&mut costs, 69392, 1000);
+
     // Dungeon widgets
     for (id, item) in &index.items {
         if item.description.as_ref().map_or(false, |d| d == "An offering used in dungeon recipes.") {

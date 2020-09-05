@@ -20,6 +20,17 @@ enum Source {
     Special,
 }
 
+impl Source {
+    fn to_str(&self) -> &'static str {
+        match *self {
+            Source::Unknown => " [UNKNOWN]",
+            Source::Special => " [SPECIAL]",
+            Source::Vendor => " [VENDOR]",
+            _ => "",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Cost {
     id: ItemId,
@@ -33,6 +44,7 @@ struct Profit {
     days: i32,
     sale: i32,
     value: i32,
+    daily: HashSet<ItemId>,
 }
 
 impl Profit {
@@ -162,21 +174,26 @@ fn main() -> Result<()> {
         let item = if let Some(i) = index.items.get(&r.output_item_id) { i } else { continue };
         if item.description.as_ref().map_or(false, |d| d.contains("used to craft the legendary")) { continue }
         if item.name == "Guild Catapult" { continue }
+
         let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
         if cost.source == Source::Auction { continue }
         let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
         let sale = price.buys.unit_price * r.output_item_count;
         let sale = sale - ((0.15 * (sale as f32)).ceil()) as i32;
+
+        let daily = days(&index, &costs, &r.output_item_id);
         let mut max_days = 0;
-        for d in days(&index, &costs, &r.output_item_id).values() {
+        for d in daily.values() {
             max_days = std::cmp::max(max_days, *d);
         }
+
         if sale > cost.value {
             profits.push(Profit {
                 id: r.id,
                 days: max_days,
                 sale,
                 value: sale - cost.value,
+                daily: daily.keys().cloned().collect(),
             });
             profit_ids.insert(r.output_item_id);
             for ing in &r.ingredients {
@@ -188,11 +205,7 @@ fn main() -> Result<()> {
     println!("profits: {}", profits.len());
 
     println!("");
-    for p in &profits {
-        if p.per_day() < MIN_PROFIT { break }
-        print_profit(&index, &costs, &p);
-    }
-    println!("");
+    print_profits_min(&index, &costs, &profits, MIN_PROFIT);
 
     let mut line = String::new();
     loop {
@@ -233,14 +246,29 @@ fn main() -> Result<()> {
                 Err(e) => { println!("{}", e); continue },
                 Ok(n) => n,
             };
-            for p in &profits {
-                if p.per_day() < profit { break }
-                print_profit(&index, &costs, &p);
-            }
+            print_profits_min(&index, &costs, &profits, profit);
         }
     }
 
     Ok(())
+}
+
+fn print_profits_min(index: &Index, costs: &Costs, profits: &Vec<Profit>, min: i32) {
+    let mut daily_used = HashSet::new();
+    'profits: for p in profits {
+        if p.per_day() < min { break }
+        for d in &p.daily {
+            if !daily_used.insert(d) {
+                let recipe = index.recipes.get(&p.id).unwrap();
+                let item = index.items.get(&recipe.output_item_id).unwrap();
+                let used = index.items.get(d).unwrap();
+                println!("(skip: {} [{}])\n", item.name, used.name);
+                continue 'profits
+            }
+        }
+        print_profit(&index, &costs, &p);
+        println!("");
+    }
 }
 
 fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
@@ -263,7 +291,7 @@ fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
     for (id, count) in &ingredients {
         let item = index.items.get(id).unwrap();
         let c = costs.get(id).unwrap();
-        println!("\t\t{} : {} @ {} = {}", item.name, count, money(c.value), money(count * c.value));
+        println!("\t\t{} : {} @ {} = {}{}", item.name, count, money(c.value), money(count * c.value), c.source.to_str());
     }
 }
 
@@ -293,14 +321,9 @@ fn print_costs(index: &Index, costs: &Costs, recipe: &Recipe, indent: usize, cou
 fn print_cost(index: &Index, costs: &Costs, id: &ItemId, indent: usize, count: i32) {
     let ic = costs.get(id).unwrap();
     let ii = index.items.get(id).unwrap();
-    let source = match ic.source {
-        Source::Unknown => " [UNKNOWN]",
-        Source::Special => " [SPECIAL]",
-        _ => "",
-    };
     let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
     let tabs = tabs.join("");
-    println!("{}{} : {} @ {} = {}{}", tabs, ii.name, count, money(ic.value), money(count * ic.value), source);
+    println!("{}{} : {} @ {} = {}{}", tabs, ii.name, count, money(ic.value), money(count * ic.value), ic.source.to_str());
     if let Source::Recipe(id) = ic.source {
         let r = index.recipes.get(&id).unwrap();
         print_costs(index, costs, r, indent+1, count);

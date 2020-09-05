@@ -81,6 +81,12 @@ fn main() -> Result<()> {
     vendor(&mut costs, 19792, 8);
     // Milling Basin
     vendor(&mut costs, 76839, 56);
+    // Lump of Tin
+    vendor(&mut costs, 19704, 8);
+    // Lump of Coal
+    vendor(&mut costs, 19750, 16);
+    // Lump of Primordium
+    vendor(&mut costs, 19924, 48);
 
     // Obsidian Shard
     // 5 for 1 Guild Commendation daily at the Guild Trader
@@ -257,12 +263,16 @@ fn print_profits_min(index: &Index, costs: &Costs, profits: &Vec<Profit>, min: i
     let mut daily_used = HashSet::new();
     'profits: for p in profits {
         if p.per_day() < min { break }
+        let recipe = index.recipes.get(&p.id).unwrap();
+        let item = index.items.get(&recipe.output_item_id).unwrap();
+        if p.days > 1 {
+            println!("(skip: {} : {} [{} days])\n", item.name, money(p.per_day()), p.days);
+            continue
+        }
         for d in &p.daily {
             if !daily_used.insert(d) {
-                let recipe = index.recipes.get(&p.id).unwrap();
-                let item = index.items.get(&recipe.output_item_id).unwrap();
                 let used = index.items.get(d).unwrap();
-                println!("(skip: {} [{}])\n", item.name, used.name);
+                println!("(skip: {} : {} [{}])\n", item.name, money(p.per_day()), used.name);
                 continue 'profits
             }
         }

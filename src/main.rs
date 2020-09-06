@@ -165,7 +165,7 @@ fn print_profit(index: &Index, p: &Profit) -> Result<()> {
     for (id, count) in &ingredients {
         let cost = Cost::new(&index, id, *count)?;
         let item = index.items.get(id).unwrap();
-        println!("\t\t{} : {} = {}", item.name, count, money(cost.total));
+        println!("\t\t{} : {} = {}{}", item.name, count, money(cost.total), cost.source.to_str());
         shop_cost += cost.total;
     }
     println!("\tTotal: {}", money(shop_cost));

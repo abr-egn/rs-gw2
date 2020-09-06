@@ -30,7 +30,7 @@ impl Profit {
     }
 }
 
-const MIN_PROFIT: i32 = 10000;
+const MIN_PROFIT: i32 = 5000;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
@@ -96,6 +96,22 @@ fn main() -> Result<()> {
                     print_profit(&index, p)?;
                 }
             }
+        }
+        if line.starts_with("cost ") {
+            let parts: Vec<_> = line.strip_prefix("cost ").unwrap().split(' ').collect();
+            let id = match parts[0].parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(id) => ItemId(id),
+            };
+            let count = match parts[1].parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(c) => c,
+            };
+            let cost = match Cost::new(&index, &id, count) {
+                Err(e) => { println!("{}", e); continue },
+                Ok(c) => c,
+            };
+            print_cost(&index, &cost, 0);
         }
         if line.starts_with("min profit ") {
             let profit_str = line.strip_prefix("min profit ").unwrap();

@@ -1,42 +1,17 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::io::{Write, stdin};
 
 #[macro_use]
 mod error;
 
 mod client;
+mod cost;
 mod index;
 
-use crate::client::{Client, ItemId, Recipe, RecipeId};
+use crate::client::{Client, ItemId, RecipeId};
+use crate::cost::{Cost, Source};
 use crate::error::Result;
 use crate::index::Index;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Source {
-    Vendor,
-    Recipe(RecipeId),
-    Auction,
-    Unknown,
-    Special,
-}
-
-impl Source {
-    fn to_str(&self) -> &'static str {
-        match *self {
-            Source::Unknown => " [UNKNOWN]",
-            Source::Special => " [SPECIAL]",
-            Source::Vendor => " [VENDOR]",
-            _ => "",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Cost {
-    id: ItemId,
-    source: Source,
-    value: i32,
-}
 
 #[derive(Debug, Clone)]
 struct Profit {
@@ -45,6 +20,7 @@ struct Profit {
     sale: i32,
     value: i32,
     daily: HashSet<ItemId>,
+    cost: Cost,
 }
 
 impl Profit {
@@ -54,126 +30,11 @@ impl Profit {
     }
 }
 
-const UNKNOWN_COST: i32 = 0;
 const MIN_PROFIT: i32 = 10000;
-
-type Costs = HashMap<ItemId, Cost>;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
     let index = Index::new(&mut client, true)?;
-
-    let mut costs: Costs = HashMap::new();
-    
-    // Thermocatalytic Reagent
-    vendor(&mut costs, 46747, 150);
-    // Spool of Gossamer Thread
-    vendor(&mut costs, 19790, 64);
-    // Spool of Silk Thread
-    vendor(&mut costs, 19791, 48);
-    // Spool of Linen Thread
-    vendor(&mut costs, 19793, 32);
-    // Spool of Cotton Thread
-    vendor(&mut costs, 19794, 24);
-    // Spool of Wool Thread
-    vendor(&mut costs, 19789, 16);
-    // Spool of Jute Thread
-    vendor(&mut costs, 19792, 8);
-    // Milling Basin
-    vendor(&mut costs, 76839, 56);
-    // Lump of Tin
-    vendor(&mut costs, 19704, 8);
-    // Lump of Coal
-    vendor(&mut costs, 19750, 16);
-    // Lump of Primordium
-    vendor(&mut costs, 19924, 48);
-
-    // Obsidian Shard
-    // 5 for 1 Guild Commendation daily at the Guild Trader
-    // Guild Commendation ~= 50s
-    special(&mut costs, 19925, 1000);
-    // Charged Quartz Crystal
-    // 25 Quartz Crystals at a place of power daily
-    special(&mut costs, 43772, index.listings.get(&ItemId(43773)).unwrap().cost(25)?);
-    // Plaguedoctor's Orichalcum-Imbued Inscription
-    // 2500 Volatile Magic + 50 Inscribed Shard ~= 3500 Volatile Magic
-    // https://gw2lunchbox.com/IstanShipments.html puts VM at ~40s per 250 (Trophy Shipment)
-    // for ~16c per 1 Volatile Magic
-    // * 3500 = 56000
-    special(&mut costs, 87809, 2*56000);
-    // Plaguedoctor's Intricate Gossamer Insignia
-    // 1250 Volatile Magic + 25 Inscribed Shard ~= 1750 Volatile Magic
-    // ~= 28000c
-    special(&mut costs, 88011, 2*28000);
-    // Branded Mass: 20 Volatile Magic ~= 320c
-    special(&mut costs, 89537, 320);
-    // Exquisite Serpentite Jewel
-    // It's a hassle to get - dwarven catacombs puzzle area daily chest.
-    special(&mut costs, 89696, 100000);
-    // Bottle of Airship Oil
-    // Handwave
-    special(&mut costs, 69434, 1000);
-    // Pile of Auric Dust
-    // Handwave
-    special(&mut costs, 69432, 1000);
-    // Ley Line Spark
-    // Handwave
-    special(&mut costs, 69392, 1000);
-
-    // Dungeon widgets
-    for (id, item) in &index.items {
-        if item.description.as_ref().map_or(false, |d| d == "An offering used in dungeon recipes.") {
-            special(&mut costs, id.0, 1000000);
-        }
-    }
-
-    let mut queue: VecDeque<ItemId> = index.items.keys().cloned().collect();
-    'queue: while let Some(iid) = queue.pop_front() {
-        if costs.contains_key(&iid) { continue }
-        match index.recipes_by_item.get(&iid) {
-            None => {
-                let (source, value) = if let Some(ls) = index.listings.get(&iid) {
-                    (Source::Auction, ls.cost(1)?)
-                } else {
-                    (Source::Unknown, UNKNOWN_COST)
-                };
-                costs.insert(iid, Cost { id: iid, source, value });
-            }
-            Some(recipe) => {
-                let mut craft_total = 0;
-                for ing in &recipe.ingredients {
-                    match costs.get(&ing.item_id) {
-                        None => {
-                            queue.push_back(iid);
-                            continue 'queue;
-                        }
-                        Some(cost) => {
-                            craft_total += cost.value * ing.count;
-                        }
-                    }
-                }
-                let (source, value) = if let Some(ls) = index.listings.get(&iid) {
-                    let cost = ls.cost(1)?;
-                    if cost < craft_total {
-                        (Source::Auction, cost)
-                    } else {
-                        (Source::Recipe(recipe.id), craft_total)
-                    }
-                } else {
-                    (Source::Recipe(recipe.id), craft_total)
-                };
-                costs.insert(iid, Cost { id: iid, source, value });
-            }
-        }
-    }
-    println!("costs: {}", costs.len());
-    let mut unknown = vec![];
-    for (id, cost) in &costs {
-        if cost.source == Source::Unknown {
-            unknown.push(*id);
-        }
-    }
-    println!("unknown: {}", unknown.len());
 
     let mut profits = vec![];
     let mut profit_ids = HashSet::new();
@@ -182,25 +43,26 @@ fn main() -> Result<()> {
         if item.description.as_ref().map_or(false, |d| d.contains("used to craft the legendary")) { continue }
         if item.name == "Guild Catapult" { continue }
 
-        let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
-        if cost.source == Source::Auction { continue }
+        let cost = if let Ok(c) = Cost::new(&index, &r.output_item_id, 1) { c } else { continue };
+        if let Source::Auction = cost.source { continue }
         let listings = if let Some(ls) = index.listings.get(&r.output_item_id) { ls } else { continue };
         let sale = if let Ok(s) = listings.sale(r.output_item_count) { s } else { continue };
         let sale = sale - ((0.15 * (sale as f32)).ceil()) as i32;
 
-        let daily = days(&index, &costs, &r.output_item_id);
+        let daily = days(&cost);
         let mut max_days = 0;
         for d in daily.values() {
             max_days = std::cmp::max(max_days, *d);
         }
 
-        if sale > cost.value {
+        if sale > cost.total {
             profits.push(Profit {
                 id: r.id,
                 days: max_days,
                 sale,
-                value: sale - cost.value,
+                value: sale - cost.total,
                 daily: daily.keys().cloned().collect(),
+                cost,
             });
             profit_ids.insert(r.output_item_id);
             for ing in &r.ingredients {
@@ -212,7 +74,7 @@ fn main() -> Result<()> {
     println!("profits: {}", profits.len());
 
     println!("");
-    print_profits_min(&index, &costs, &profits, MIN_PROFIT);
+    print_profits_min(&index, &profits, MIN_PROFIT);
 
     let mut line = String::new();
     loop {
@@ -231,21 +93,9 @@ fn main() -> Result<()> {
             for p in &profits {
                 let r = index.recipes.get(&p.id).unwrap();
                 if r.output_item_id == id {
-                    print_profit(&index, &costs, p);
+                    print_profit(&index, p);
                 }
             }
-        }
-        if line.starts_with("cost ") {
-            let id_str = line.strip_prefix("cost ").unwrap();
-            let id = match id_str.parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(id) => ItemId(id),
-            };
-            if !costs.contains_key(&id) {
-                println!("no cost entry");
-                continue
-            }
-            print_cost(&index, &costs, &id, 0, 1);
         }
         if line.starts_with("min profit ") {
             let profit_str = line.strip_prefix("min profit ").unwrap();
@@ -253,14 +103,14 @@ fn main() -> Result<()> {
                 Err(e) => { println!("{}", e); continue },
                 Ok(n) => n,
             };
-            print_profits_min(&index, &costs, &profits, profit);
+            print_profits_min(&index, &profits, profit);
         }
     }
 
     Ok(())
 }
 
-fn print_profits_min(index: &Index, costs: &Costs, profits: &Vec<Profit>, min: i32) {
+fn print_profits_min(index: &Index, profits: &Vec<Profit>, min: i32) {
     let mut daily_used = HashSet::new();
     'profits: for p in profits {
         if p.per_day() < min { break }
@@ -277,22 +127,23 @@ fn print_profits_min(index: &Index, costs: &Costs, profits: &Vec<Profit>, min: i
                 continue 'profits
             }
         }
-        print_profit(&index, &costs, &p);
+        print_profit(&index, &p);
         println!("");
     }
 }
 
-fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
+fn print_profit(index: &Index, p: &Profit) {
     let recipe = index.recipes.get(&p.id).unwrap();
     let item = index.items.get(&recipe.output_item_id).unwrap();
-    let cost = costs.get(&item.id).unwrap();
+    let cost = &p.cost;
     println!("{} : {} ({} over {} days)", item.name, money(p.per_day()), money(p.value), p.days);
     let output_price = index.listings.get(&item.id).unwrap().sale(1).unwrap();
     println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price));
-    print_costs(&index, &costs, &recipe, 1, 1);
-    println!("\tCost: {}", money(cost.value));
+    print_cost(&index, &cost, 1);
+    println!("\tCost: {}", money(cost.total));
+    /*
     let mut materials = index.materials.clone();
-    let ingredients = all_ingredients(&index, &costs, &mut materials, &recipe.output_item_id, 1);
+    let ingredients = all_ingredients(&index, &cost);
     let mut shop_cost = 0;
     for (id, count) in &ingredients {
         let c = costs.get(id).unwrap();
@@ -304,43 +155,22 @@ fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
         let c = costs.get(id).unwrap();
         println!("\t\t{} : {} @ {} = {}{}", item.name, count, money(c.value), money(count * c.value), c.source.to_str());
     }
+    */
 }
 
-fn vendor(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
-    costs.insert(ItemId(id), Cost {
-        id: ItemId(id),
-        source: Source::Vendor,
-        value: price,
-    });
-}
-
-fn special(costs: &mut HashMap<ItemId, Cost>, id: i32, price: i32) {
-    costs.insert(ItemId(id), Cost {
-        id: ItemId(id),
-        source: Source::Special,
-        value: price,
-    });
-}
-
-fn print_costs(index: &Index, costs: &Costs, recipe: &Recipe, indent: usize, count: i32) {
-    for i in &recipe.ingredients {
-        let total = i.count * count;
-        print_cost(index, costs, &i.item_id, indent, total);
-    }
-}
-
-fn print_cost(index: &Index, costs: &Costs, id: &ItemId, indent: usize, count: i32) {
-    let ic = costs.get(id).unwrap();
-    let ii = index.items.get(id).unwrap();
+fn print_cost(index: &Index, cost: &Cost, indent: usize) {
+    let ii = index.items.get(&cost.id).unwrap();
     let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
     let tabs = tabs.join("");
-    println!("{}{} : {} @ {} = {}{}", tabs, ii.name, count, money(ic.value), money(count * ic.value), ic.source.to_str());
-    if let Source::Recipe(id) = ic.source {
-        let r = index.recipes.get(&id).unwrap();
-        print_costs(index, costs, r, indent+1, count);
+    println!("{}{} : {} = {}{}", tabs, ii.name, cost.quantity, money(cost.total), cost.source.to_str());
+    if let Source::Recipe { ingredients, .. } = &cost.source {
+        for ing in ingredients.values() {
+            print_cost(index, ing, indent+1);
+        }
     }
 }
 
+/*
 fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut HashMap<ItemId, i32>, id: &ItemId, count: i32) -> HashMap<ItemId, i32> {
     let mut out = HashMap::new();
     let has = materials.get(id).cloned().unwrap_or(0);
@@ -362,7 +192,7 @@ fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut
     }
     out
 }
-
+*/
 fn money(amount: i32) -> String {
     let mut out = String::new();
     if amount >= 10000 {
@@ -391,19 +221,17 @@ fn is_daily(id: &ItemId) -> bool {
     }
 }
 
-fn days(index: &Index, costs: &Costs, id: &ItemId) -> HashMap<ItemId, i32> {
-    if is_daily(id) {
+fn days(cost: &Cost) -> HashMap<ItemId, i32> {
+    if is_daily(&cost.id) {
         let mut out = HashMap::new();
-        out.insert(*id, 1);
+        out.insert(cost.id, cost.quantity);
         return out;
     }
-    let cost = costs.get(id).unwrap();
-    let rid = if let Source::Recipe(rid) = cost.source { rid } else { return HashMap::new() };
-    let recipe = index.recipes.get(&rid).unwrap();
+    let ingredients = if let Source::Recipe { ingredients, .. } = &cost.source { ingredients } else { return HashMap::new() };
     let mut out = HashMap::new();
-    for ing in &recipe.ingredients {
-        for (id, count) in days(index, costs, &ing.item_id) {
-            *out.entry(id).or_insert(0) += count * ing.count;
+    for ing in ingredients.values() {
+        for (id, count) in days(ing) {
+            *out.entry(id).or_insert(0) += count;
         }
     }
     out

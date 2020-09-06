@@ -1,16 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-use crate::client::{CharacterRecipes, Client, Item, ItemId, /*Price, */Recipe, RecipeId, Listings};
+use crate::client::{CharacterRecipes, Client, Item, ItemId, Recipe, RecipeId, Listings};
 use crate::error::Result;
 
 pub struct Index {
     pub recipes: HashMap<RecipeId, Recipe>,
     pub recipes_by_item: HashMap<ItemId, Recipe>,
     pub items: HashMap<ItemId, Item>,
-    //pub prices: HashMap<ItemId, Price>,
     pub materials: HashMap<ItemId, i32>,
     pub listings: HashMap<ItemId, Listings>,
+    pub offerings: HashSet<ItemId>,
 }
 
 impl Index {
@@ -70,26 +70,6 @@ impl Index {
         println!("retrieved items: {}", items.len());
         
         let pid_vec: Vec<ItemId> = all_items.iter().cloned().collect();
-        /*
-        let mut prices = HashMap::<ItemId, Price>::new();
-        for ids in pid_vec.chunks(50) {
-            let ps: Vec<Price> = client.prices(ids)?;
-            for p in ps {
-                let mut to_insert = p.clone();
-                if let Some(other) = prices.get(&p.id) {
-                    if other.sells.unit_price < to_insert.sells.unit_price {
-                        to_insert = other.clone();
-                    }
-                }
-                prices.insert(p.id, to_insert);
-            }
-            print!(".");
-            std::io::stdout().flush()?;
-        }
-        println!("");
-        println!("retrieved prices: {}", prices.len());
-        */
-
         let mut listings = HashMap::new();
         for ids in pid_vec.chunks(50) {
             let ls = client.listings(ids)?;
@@ -109,6 +89,13 @@ impl Index {
             materials.insert(m.id, m.count);
         }
 
-        Ok(Index{recipes, recipes_by_item, items, /*prices, */materials, listings})
+        let mut offerings = HashSet::new();
+        for (id, item) in &items {
+            if item.description.as_ref().map_or(false, |d| d == "An offering used in dungeon recipes.") {
+                offerings.insert(*id);
+            }
+        }
+
+        Ok(Index{recipes, recipes_by_item, items, materials, listings, offerings})
     }
 }

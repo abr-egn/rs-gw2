@@ -33,6 +33,7 @@ impl Client {
         self.fetch(false, &format!("recipes?ids={}", ids_str(ids)))
     }
 
+    #[allow(unused)]
     pub fn prices(&mut self, ids: &[ItemId]) -> Result<Vec<Price>> {
         self.fetch(false, &format!("commerce/prices?ids={}", ids_str(ids)))
     }

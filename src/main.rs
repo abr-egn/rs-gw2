@@ -74,7 +74,7 @@ fn main() -> Result<()> {
     println!("profits: {}", profits.len());
 
     println!("");
-    print_profits_min(&index, &profits, MIN_PROFIT);
+    print_profits_min(&index, &profits, MIN_PROFIT)?;
 
     let mut line = String::new();
     loop {
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
             for p in &profits {
                 let r = index.recipes.get(&p.id).unwrap();
                 if r.output_item_id == id {
-                    print_profit(&index, p);
+                    print_profit(&index, p)?;
                 }
             }
         }
@@ -103,14 +103,14 @@ fn main() -> Result<()> {
                 Err(e) => { println!("{}", e); continue },
                 Ok(n) => n,
             };
-            print_profits_min(&index, &profits, profit);
+            print_profits_min(&index, &profits, profit)?;
         }
     }
 
     Ok(())
 }
 
-fn print_profits_min(index: &Index, profits: &Vec<Profit>, min: i32) {
+fn print_profits_min(index: &Index, profits: &Vec<Profit>, min: i32) -> Result<()> {
     let mut daily_used = HashSet::new();
     'profits: for p in profits {
         if p.per_day() < min { break }
@@ -127,35 +127,33 @@ fn print_profits_min(index: &Index, profits: &Vec<Profit>, min: i32) {
                 continue 'profits
             }
         }
-        print_profit(&index, &p);
+        print_profit(&index, &p)?;
         println!("");
     }
+    Ok(())
 }
 
-fn print_profit(index: &Index, p: &Profit) {
+fn print_profit(index: &Index, p: &Profit) -> Result<()> {
     let recipe = index.recipes.get(&p.id).unwrap();
     let item = index.items.get(&recipe.output_item_id).unwrap();
     let cost = &p.cost;
     println!("{} : {} ({} over {} days)", item.name, money(p.per_day()), money(p.value), p.days);
     let output_price = index.listings.get(&item.id).unwrap().sale(1).unwrap();
     println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price));
-    print_cost(&index, &cost, 1);
     println!("\tCost: {}", money(cost.total));
-    /*
+    print_cost(&index, &cost, 1);
     let mut materials = index.materials.clone();
-    let ingredients = all_ingredients(&index, &cost);
+    let ingredients = shopping_ingredients(&index, &cost, &mut materials);
     let mut shop_cost = 0;
+    println!("\tShopping:");
     for (id, count) in &ingredients {
-        let c = costs.get(id).unwrap();
-        shop_cost += count * c.value;
-    }
-    println!("\tShopping: {}", money(shop_cost));
-    for (id, count) in &ingredients {
+        let cost = Cost::new(&index, id, *count)?;
         let item = index.items.get(id).unwrap();
-        let c = costs.get(id).unwrap();
-        println!("\t\t{} : {} @ {} = {}{}", item.name, count, money(c.value), money(count * c.value), c.source.to_str());
+        println!("\t\t{} : {} = {}", item.name, count, money(cost.total));
+        shop_cost += cost.total;
     }
-    */
+    println!("\tTotal: {}", money(shop_cost));
+    Ok(())
 }
 
 fn print_cost(index: &Index, cost: &Cost, indent: usize) {
@@ -170,29 +168,27 @@ fn print_cost(index: &Index, cost: &Cost, indent: usize) {
     }
 }
 
-/*
-fn all_ingredients(index: &Index, costs: &HashMap<ItemId, Cost>, materials: &mut HashMap<ItemId, i32>, id: &ItemId, count: i32) -> HashMap<ItemId, i32> {
+fn shopping_ingredients(index: &Index, cost: &Cost, materials: &mut HashMap<ItemId, i32>) -> HashMap<ItemId, i32> {
     let mut out = HashMap::new();
-    let has = materials.get(id).cloned().unwrap_or(0);
-    let used = std::cmp::min(count, has);
+    let has = materials.get(&cost.id).cloned().unwrap_or(0);
+    let used = std::cmp::min(cost.quantity, has);
     if used > 0 {
-        *materials.get_mut(id).unwrap() -= used;
+        *materials.get_mut(&cost.id).unwrap() -= used;
     }
-    let needed = count - used;
+    let needed = cost.quantity - used;
     if needed <= 0 { return HashMap::new(); }
-    if let Source::Recipe(rid) = costs.get(id).unwrap().source {
-        let recipe = index.recipes.get(&rid).unwrap();
-        for ing in &recipe.ingredients {
-            for (id, count) in all_ingredients(index, costs, materials, &ing.item_id, needed * ing.count) {
+    if let Source::Recipe { ingredients, .. } = &cost.source {
+        for ing in ingredients.values() {
+            for (id, count) in shopping_ingredients(index, ing, materials) {
                 *out.entry(id).or_insert(0) += count;
             }
         }
     } else {
-        out.insert(*id, needed);
+        out.insert(cost.id, needed);
     }
     out
 }
-*/
+
 fn money(amount: i32) -> String {
     let mut out = String::new();
     if amount >= 10000 {

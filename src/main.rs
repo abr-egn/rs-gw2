@@ -94,7 +94,7 @@ fn main() -> Result<()> {
     special(&mut costs, 19925, 1000);
     // Charged Quartz Crystal
     // 25 Quartz Crystals at a place of power daily
-    special(&mut costs, 43772, 25 * index.prices.get(&ItemId(43773)).unwrap().sells.unit_price);
+    special(&mut costs, 43772, index.listings.get(&ItemId(43773)).unwrap().cost(25)?);
     // Plaguedoctor's Orichalcum-Imbued Inscription
     // 2500 Volatile Magic + 50 Inscribed Shard ~= 3500 Volatile Magic
     // https://gw2lunchbox.com/IstanShipments.html puts VM at ~40s per 250 (Trophy Shipment)
@@ -132,8 +132,8 @@ fn main() -> Result<()> {
         if costs.contains_key(&iid) { continue }
         match index.recipes_by_item.get(&iid) {
             None => {
-                let (source, value) = if let Some(price) = index.prices.get(&iid) {
-                    (Source::Auction, price.sells.unit_price)
+                let (source, value) = if let Some(ls) = index.listings.get(&iid) {
+                    (Source::Auction, ls.cost(1)?)
                 } else {
                     (Source::Unknown, UNKNOWN_COST)
                 };
@@ -152,9 +152,10 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                let (source, value) = if let Some(price) = index.prices.get(&iid) {
-                    if price.sells.unit_price < craft_total {
-                        (Source::Auction, price.sells.unit_price)
+                let (source, value) = if let Some(ls) = index.listings.get(&iid) {
+                    let cost = ls.cost(1)?;
+                    if cost < craft_total {
+                        (Source::Auction, cost)
                     } else {
                         (Source::Recipe(recipe.id), craft_total)
                     }
@@ -183,8 +184,8 @@ fn main() -> Result<()> {
 
         let cost = if let Some(c) = costs.get(&r.output_item_id) { c } else { continue };
         if cost.source == Source::Auction { continue }
-        let price = if let Some(p) = index.prices.get(&r.output_item_id) { p } else { continue };
-        let sale = price.buys.unit_price * r.output_item_count;
+        let listings = if let Some(ls) = index.listings.get(&r.output_item_id) { ls } else { continue };
+        let sale = if let Ok(s) = listings.sale(r.output_item_count) { s } else { continue };
         let sale = sale - ((0.15 * (sale as f32)).ceil()) as i32;
 
         let daily = days(&index, &costs, &r.output_item_id);
@@ -286,8 +287,8 @@ fn print_profit(index: &Index, costs: &Costs, p: &Profit) {
     let item = index.items.get(&recipe.output_item_id).unwrap();
     let cost = costs.get(&item.id).unwrap();
     println!("{} : {} ({} over {} days)", item.name, money(p.per_day()), money(p.value), p.days);
-    let output_price = index.prices.get(&item.id).unwrap();
-    println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price.buys.unit_price));
+    let output_price = index.listings.get(&item.id).unwrap().sale(1).unwrap();
+    println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price));
     print_costs(&index, &costs, &recipe, 1, 1);
     println!("\tCost: {}", money(cost.value));
     let mut materials = index.materials.clone();

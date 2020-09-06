@@ -1,15 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-use crate::client::{CharacterRecipes, Client, Item, ItemId, Price, Recipe, RecipeId};
+use crate::client::{CharacterRecipes, Client, Item, ItemId, /*Price, */Recipe, RecipeId, Listings};
 use crate::error::Result;
 
 pub struct Index {
     pub recipes: HashMap<RecipeId, Recipe>,
     pub recipes_by_item: HashMap<ItemId, Recipe>,
     pub items: HashMap<ItemId, Item>,
-    pub prices: HashMap<ItemId, Price>,
+    //pub prices: HashMap<ItemId, Price>,
     pub materials: HashMap<ItemId, i32>,
+    pub listings: HashMap<ItemId, Listings>,
 }
 
 impl Index {
@@ -68,9 +69,9 @@ impl Index {
         println!("");
         println!("retrieved items: {}", items.len());
         
-        let mut prices = HashMap::<ItemId, Price>::new();
-    
         let pid_vec: Vec<ItemId> = all_items.iter().cloned().collect();
+        /*
+        let mut prices = HashMap::<ItemId, Price>::new();
         for ids in pid_vec.chunks(50) {
             let ps: Vec<Price> = client.prices(ids)?;
             for p in ps {
@@ -87,6 +88,19 @@ impl Index {
         }
         println!("");
         println!("retrieved prices: {}", prices.len());
+        */
+
+        let mut listings = HashMap::new();
+        for ids in pid_vec.chunks(50) {
+            let ls = client.listings(ids)?;
+            for l in ls {
+                listings.insert(l.id, l);
+            }
+            print!(".");
+            std::io::stdout().flush()?;
+        }
+        println!("");
+        println!("retrieve listings: {}", listings.len());
 
         let mut materials = HashMap::new();
         let ms = client.materials()?;
@@ -95,6 +109,6 @@ impl Index {
             materials.insert(m.id, m.count);
         }
 
-        Ok(Index{recipes, recipes_by_item, items, prices, materials})
+        Ok(Index{recipes, recipes_by_item, items, /*prices, */materials, listings})
     }
 }

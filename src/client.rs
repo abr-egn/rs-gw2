@@ -49,6 +49,15 @@ impl Client {
         self.fetch(false, "recipes")
     }
 
+    pub fn listings(&mut self, ids: &[ItemId]) -> Result<Vec<Listings>> {
+        let mut out: Vec<Listings> = self.fetch(false, &format!("commerce/listings?ids={}", ids_str(ids)))?;
+        for ls in &mut out {
+            ls.buys.sort_by(|a, b| b.unit_price.cmp(&a.unit_price));
+            ls.sells.sort_by(|a, b| a.unit_price.cmp(&b.unit_price));
+        }
+        Ok(out)
+    }
+
     fn fetch<Out>(
         &mut self,
         auth: bool,
@@ -178,4 +187,47 @@ pub struct Material {
     pub category: i32,
     pub binding: Option<String>,
     pub count: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Listings {
+    pub id: ItemId,
+    pub buys: Vec<Listing>,
+    pub sells: Vec<Listing>,
+}
+
+impl Listings {
+    pub fn cost(&self, quantity: i32) -> Result<i32> {
+        let mut remaining = quantity;
+        let mut cost = 0;
+        for l in &self.sells {
+            let bought = std::cmp::min(remaining, l.quantity);
+            cost += bought * l.unit_price;
+            remaining -= bought;
+            if remaining == 0 {
+                return Ok(cost)
+            }
+        }
+        failed!("cost short {} of {}", remaining, self.id.0)
+    }
+    pub fn sale(&self, quantity: i32) -> Result<i32> {
+        let mut remaining = quantity;
+        let mut sale = 0;
+        for l in &self.buys {
+            let sold = std::cmp::min(remaining, l.quantity);
+            sale += sold * l.unit_price;
+            remaining -= sold;
+            if remaining == 0 {
+                return Ok(sale)
+            }
+        }
+        failed!("sale short {} of {}", remaining, self.id.0)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Listing {
+    pub listings: i32,
+    pub unit_price: i32,
+    pub quantity: i32,
 }

@@ -103,10 +103,12 @@ fn main() -> Result<()> {
                 Err(e) => { println!("{}", e); continue },
                 Ok(id) => ItemId(id),
             };
-            let count = match parts[1].parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(c) => c,
-            };
+            let count = if parts.len() == 2 {
+                match parts[1].parse::<i32>() {
+                    Err(e) => { println!("{}", e); continue },
+                    Ok(c) => c,
+                }
+            } else { 1 };
             let cost = match Cost::new(&index, &id, count) {
                 Err(e) => { println!("{}", e); continue },
                 Ok(c) => c,

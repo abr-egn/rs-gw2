@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::{Write, stdin};
+//use std::io::{Write, stdin};
 
 #[macro_use]
 mod error;
@@ -76,6 +76,7 @@ fn main() -> Result<()> {
     println!("");
     print_profits_min(&index, &profits, MIN_PROFIT)?;
 
+    /*
     let mut line = String::new();
     loop {
         print!("> ");
@@ -124,6 +125,7 @@ fn main() -> Result<()> {
             print_profits_min(&index, &profits, profit)?;
         }
     }
+    */
 
     Ok(())
 }

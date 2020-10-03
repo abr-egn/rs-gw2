@@ -21,6 +21,7 @@ struct Profit {
     value: i32,
     daily: HashSet<ItemId>,
     cost: Cost,
+    mats_profit: Option<i32>,
 }
 
 impl Profit {
@@ -40,14 +41,13 @@ fn main() -> Result<()> {
     println!("flip profits: {}", flip_profits.len());
     println!("bank profits: {}", bank_profits.len());
 
-    /*
     println!("");
     println!("=== Flip Profits ===");
-    print_profits_min(&index, &flip_profits, MIN_PROFIT)?;
-    */
     println!("");
+    print_profits_min(&index, &flip_profits, MIN_PROFIT)?;
     println!("=== Bank Profits ===");
-    print_profits_min(&index, &bank_profits, 0)?;
+    println!("");
+    print_profits_min(&index, &bank_profits, MIN_PROFIT)?;
 
     if false {
         command_loop(&index, &flip_profits)?;
@@ -74,6 +74,7 @@ fn find_profits(index: &Index) -> (Vec<Profit>, Vec<Profit>) {
         if let Some(p) = bank_profit(index, r, sale) { bank_profits.push(p); }
     }
     flip_profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
+    bank_profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
     (flip_profits, bank_profits)
 }
 
@@ -94,6 +95,7 @@ fn flip_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
             value: sale - cost.total,
             daily: daily.keys().cloned().collect(),
             cost,
+            mats_profit: None,
         });
     }
     None
@@ -124,6 +126,7 @@ fn bank_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
             value: sale - (cost.total + used_profit),
             daily: daily.keys().cloned().collect(),
             cost,
+            mats_profit: Some(used_profit),
         });
     }
     None
@@ -150,58 +153,6 @@ fn bank_used_aux(id: &ItemId, s: &Source, out: &mut HashMap<ItemId, i32>) {
         },
         _ => ()
     }
-}
-
-fn command_loop(index: &Index, profits: &[Profit]) -> Result<()> {
-    let mut line = String::new();
-    loop {
-        print!("> ");
-        std::io::stdout().flush()?;
-        line.clear();
-        stdin().read_line(&mut line)?;
-        let line = line.trim();
-        if line == "exit" { break }
-        if line.starts_with("profit ") {
-            let id_str = line.strip_prefix("profit ").unwrap();
-            let id = match id_str.parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(id) => ItemId(id),
-            };
-            for p in profits {
-                let r = index.recipes.get(&p.id).unwrap();
-                if r.output_item_id == id {
-                    print_profit(&index, p)?;
-                }
-            }
-        }
-        if line.starts_with("cost ") {
-            let parts: Vec<_> = line.strip_prefix("cost ").unwrap().split(' ').collect();
-            let id = match parts[0].parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(id) => ItemId(id),
-            };
-            let count = if parts.len() == 2 {
-                match parts[1].parse::<i32>() {
-                    Err(e) => { println!("{}", e); continue },
-                    Ok(c) => c,
-                }
-            } else { 1 };
-            let cost = match Cost::new(&index, &id, count) {
-                Err(e) => { println!("{}", e); continue },
-                Ok(c) => c,
-            };
-            print_cost(&index, &cost, 0);
-        }
-        if line.starts_with("min profit ") {
-            let profit_str = line.strip_prefix("min profit ").unwrap();
-            let profit = match profit_str.parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(n) => n,
-            };
-            print_profits_min(index, profits, profit)?;
-        }
-    }
-    Ok(())
 }
 
 fn print_profits_min(index: &Index, profits: &[Profit], min: i32) -> Result<()> {
@@ -235,6 +186,9 @@ fn print_profit(index: &Index, p: &Profit) -> Result<()> {
     let output_price = index.listings.get(&item.id).unwrap().sale(1).unwrap();
     println!("\tSale: {} = {} @ {}", money(p.sale), recipe.output_item_count, money(output_price));
     println!("\tCost: {}", money(cost.total));
+    if let Some(mp) = p.mats_profit {
+        println!("\tMats: {}", money(mp));
+    }
     print_cost(&index, &cost, 1);
     let mut materials = index.materials.clone();
     let ingredients = shopping_ingredients(&index, &cost, &mut materials);
@@ -325,4 +279,56 @@ fn days(cost: &Cost) -> HashMap<ItemId, i32> {
         }
     }
     out
+}
+
+fn command_loop(index: &Index, profits: &[Profit]) -> Result<()> {
+    let mut line = String::new();
+    loop {
+        print!("> ");
+        std::io::stdout().flush()?;
+        line.clear();
+        stdin().read_line(&mut line)?;
+        let line = line.trim();
+        if line == "exit" { break }
+        if line.starts_with("profit ") {
+            let id_str = line.strip_prefix("profit ").unwrap();
+            let id = match id_str.parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(id) => ItemId(id),
+            };
+            for p in profits {
+                let r = index.recipes.get(&p.id).unwrap();
+                if r.output_item_id == id {
+                    print_profit(&index, p)?;
+                }
+            }
+        }
+        if line.starts_with("cost ") {
+            let parts: Vec<_> = line.strip_prefix("cost ").unwrap().split(' ').collect();
+            let id = match parts[0].parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(id) => ItemId(id),
+            };
+            let count = if parts.len() == 2 {
+                match parts[1].parse::<i32>() {
+                    Err(e) => { println!("{}", e); continue },
+                    Ok(c) => c,
+                }
+            } else { 1 };
+            let cost = match Cost::new(&index, &id, count) {
+                Err(e) => { println!("{}", e); continue },
+                Ok(c) => c,
+            };
+            print_cost(&index, &cost, 0);
+        }
+        if line.starts_with("min profit ") {
+            let profit_str = line.strip_prefix("min profit ").unwrap();
+            let profit = match profit_str.parse::<i32>() {
+                Err(e) => { println!("{}", e); continue },
+                Ok(n) => n,
+            };
+            print_profits_min(index, profits, profit)?;
+        }
+    }
+    Ok(())
 }

@@ -47,7 +47,7 @@ impl Cost {
     pub fn new_with_bank(index: &Index, id: &ItemId, quantity: i32, bank: &mut HashMap<ItemId, i32>) -> Result<Cost> {
         if let Some(count) = bank.get(id).cloned() {
             if count > 0 {
-                let used = std::cmp::max(quantity, count);
+                let used = std::cmp::min(quantity, count);
                 bank.insert(*id, count - used);
                 return Ok(if used == quantity {
                     Cost {

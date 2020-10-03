@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-//use std::io::{Write, stdin};
+use std::io::{Write, stdin};
 
 #[macro_use]
 mod error;
@@ -14,7 +14,7 @@ use crate::error::Result;
 use crate::index::Index;
 
 #[derive(Debug, Clone)]
-struct Profit {
+struct FlipProfit {
     id: RecipeId,
     days: i32,
     sale: i32,
@@ -23,7 +23,7 @@ struct Profit {
     cost: Cost,
 }
 
-impl Profit {
+impl FlipProfit {
     fn per_day(&self) -> i32 {
         let d = std::cmp::max(1, self.days) as f32;
         ((self.value as f32) / d).floor() as i32
@@ -36,6 +36,20 @@ fn main() -> Result<()> {
     let mut client = Client::new();
     let index = Index::new(&mut client, true)?;
 
+    let profits = find_flip_profits(&index);
+    println!("profits: {}", profits.len());
+
+    println!("");
+    print_profits_min(&index, &profits, MIN_PROFIT)?;
+
+    if false {
+        command_loop(&index, &profits)?;
+    }
+
+    Ok(())
+}
+
+fn find_flip_profits(index: &Index) -> Vec<FlipProfit> {
     let mut profits = vec![];
     let mut profit_ids = HashSet::new();
     for r in index.recipes.values() {
@@ -56,7 +70,7 @@ fn main() -> Result<()> {
         }
 
         if sale > cost.total {
-            profits.push(Profit {
+            profits.push(FlipProfit {
                 id: r.id,
                 days: max_days,
                 sale,
@@ -71,12 +85,10 @@ fn main() -> Result<()> {
         }
     }
     profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
-    println!("profits: {}", profits.len());
+    profits
+}
 
-    println!("");
-    print_profits_min(&index, &profits, MIN_PROFIT)?;
-
-    /*
+fn command_loop(index: &Index, profits: &[FlipProfit]) -> Result<()> {
     let mut line = String::new();
     loop {
         print!("> ");
@@ -91,7 +103,7 @@ fn main() -> Result<()> {
                 Err(e) => { println!("{}", e); continue },
                 Ok(id) => ItemId(id),
             };
-            for p in &profits {
+            for p in profits {
                 let r = index.recipes.get(&p.id).unwrap();
                 if r.output_item_id == id {
                     print_profit(&index, p)?;
@@ -122,15 +134,13 @@ fn main() -> Result<()> {
                 Err(e) => { println!("{}", e); continue },
                 Ok(n) => n,
             };
-            print_profits_min(&index, &profits, profit)?;
+            print_profits_min(index, profits, profit)?;
         }
     }
-    */
-
     Ok(())
 }
 
-fn print_profits_min(index: &Index, profits: &Vec<Profit>, min: i32) -> Result<()> {
+fn print_profits_min(index: &Index, profits: &[FlipProfit], min: i32) -> Result<()> {
     let mut daily_used = HashSet::new();
     'profits: for p in profits {
         if p.per_day() < min { break }
@@ -153,7 +163,7 @@ fn print_profits_min(index: &Index, profits: &Vec<Profit>, min: i32) -> Result<(
     Ok(())
 }
 
-fn print_profit(index: &Index, p: &Profit) -> Result<()> {
+fn print_profit(index: &Index, p: &FlipProfit) -> Result<()> {
     let recipe = index.recipes.get(&p.id).unwrap();
     let item = index.items.get(&recipe.output_item_id).unwrap();
     let cost = &p.cost;

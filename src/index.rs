@@ -8,7 +8,7 @@ pub struct Index {
     pub recipes: HashMap<RecipeId, Recipe>,
     pub recipes_by_item: HashMap<ItemId, Recipe>,
     pub items: HashMap<ItemId, Item>,
-    pub materials: HashMap<ItemId, i32>,
+    pub materials: HashMap<ItemId, i32>,  // item -> bank count
     pub listings: HashMap<ItemId, Listings>,
     pub offerings: HashSet<ItemId>,
 }

@@ -14,6 +14,10 @@ pub enum Source {
     Auction,
     Unknown,
     Special,
+    Bank {
+        used: i32,
+        rest: Option<Box<Source>>,
+    },
 }
 
 impl Source {
@@ -37,6 +41,32 @@ pub struct Cost {
 
 impl Cost {
     pub fn new(index: &Index, id: &ItemId, quantity: i32) -> Result<Cost> {
+        Cost::new_with_bank(index, id, quantity, &mut HashMap::new())
+    }
+
+    pub fn new_with_bank(index: &Index, id: &ItemId, quantity: i32, bank: &mut HashMap<ItemId, i32>) -> Result<Cost> {
+        if let Some(count) = bank.get(id).cloned() {
+            if count > 0 {
+                let used = std::cmp::max(quantity, count);
+                bank.insert(*id, count - used);
+                return Ok(if used == quantity {
+                    Cost {
+                        id: *id,
+                        source: Source::Bank { used, rest: None },
+                        quantity,
+                        total: 0,
+                    }
+                } else {
+                    let rest = Cost::new_with_bank(index, id, quantity - used, bank)?;
+                    Cost {
+                        id: *id,
+                        source: Source::Bank { used, rest: Some(Box::new(rest.source)) },
+                        quantity,
+                        total: rest.total,
+                    }
+                })
+            }
+        }
         if let Some(value) = vendor(id) {
             return Ok(Cost {
                 id: *id,
@@ -45,7 +75,7 @@ impl Cost {
                 total: quantity * value,
             })
         }
-        if let Some(value) = special(index, id)? {
+        if let Some(value) = special(index, id) {
             return Ok(Cost {
                 id: *id,
                 source: Source::Special,
@@ -75,14 +105,18 @@ impl Cost {
         let runs = ((quantity as f32) / (recipe.output_item_count as f32)).ceil() as i32;
         let mut craft_total = 0;
         let mut ingredients = HashMap::new();
+        // Snapshot the bank before computing crafted cost so it can be set back
+        // to this if auctioning is cheaper.
+        let old_bank = bank.clone();
         for ing in &recipe.ingredients {
-            let ing_cost = Cost::new(index, &ing.item_id, ing.count * runs)?;
+            let ing_cost = Cost::new_with_bank(index, &ing.item_id, ing.count * runs, bank)?;
             craft_total += ing_cost.total;
             ingredients.insert(ing.item_id, ing_cost);
         }
         if let Some(ls) = index.listings.get(id) {
             if let Ok(total) = ls.cost(quantity) {
                 if total < craft_total {
+                    *bank = old_bank;
                     return Ok(Cost {
                         id: *id,
                         source: Source::Auction,
@@ -104,7 +138,7 @@ impl Cost {
     }
 }
 
-fn vendor(id: &ItemId) -> Option<i32> {
+pub fn vendor(id: &ItemId) -> Option<i32> {
     Some(match id.0 {
         // Thermocatalytic Reagent
         46747 => 150,
@@ -132,15 +166,15 @@ fn vendor(id: &ItemId) -> Option<i32> {
     })
 }
 
-fn special(index: &Index, id: &ItemId) -> Result<Option<i32>> {
-    Ok(Some(match id.0 {
+pub fn special(index: &Index, id: &ItemId) -> Option<i32> {
+    Some(match id.0 {
         // Obsidian Shard
         // 5 for 1 Guild Commendation daily at the Guild Trader
         // Guild Commendation ~= 50s
         19925 => 1000,
         // Charged Quartz Crystal
         // 25 Quartz Crystals at a place of power daily
-        43772 => index.listings.get(&ItemId(43773)).unwrap().cost(25)?,
+        43772 => index.listings.get(&ItemId(43773)).unwrap().cost(25).unwrap(),
         // Plaguedoctor's Orichalcum-Imbued Inscription
         // 2500 Volatile Magic + 50 Inscribed Shard ~= 3500 Volatile Magic
         // https://gw2lunchbox.com/IstanShipments.html puts VM at ~40s per 250 (Trophy Shipment)
@@ -168,6 +202,6 @@ fn special(index: &Index, id: &ItemId) -> Result<Option<i32>> {
         // Dungeon widgets
         _ if index.offerings.contains(id) => 1000000,
 
-        _ => return Ok(None),
-    }))
+        _ => return None,
+    })
 }

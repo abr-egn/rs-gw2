@@ -14,7 +14,7 @@ use crate::error::Result;
 use crate::index::Index;
 
 #[derive(Debug, Clone)]
-struct FlipProfit {
+struct Profit {
     id: RecipeId,
     days: i32,
     sale: i32,
@@ -23,7 +23,7 @@ struct FlipProfit {
     cost: Cost,
 }
 
-impl FlipProfit {
+impl Profit {
     fn per_day(&self) -> i32 {
         let d = std::cmp::max(1, self.days) as f32;
         ((self.value as f32) / d).floor() as i32
@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     let mut client = Client::new();
     let index = Index::new(&mut client, true)?;
 
-    let profits = find_flip_profits(&index);
+    let profits = find_profits(&index);
     println!("profits: {}", profits.len());
 
     println!("");
@@ -49,28 +49,28 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn find_flip_profits(index: &Index) -> Vec<FlipProfit> {
+fn find_profits(index: &Index) -> Vec<Profit> {
     let mut profits = vec![];
-    let mut profit_ids = HashSet::new();
     for r in index.recipes.values() {
         let item = if let Some(i) = index.items.get(&r.output_item_id) { i } else { continue };
         if item.description.as_ref().map_or(false, |d| d.contains("used to craft the legendary")) { continue }
         if item.name == "Guild Catapult" { continue }
 
+        let sale = {
+            let listings = if let Some(ls) = index.listings.get(&r.output_item_id) { ls } else { continue };
+            let gross_sale = if let Ok(s) = listings.sale(r.output_item_count) { s } else { continue };
+            gross_sale - ((0.15 * (gross_sale as f32)).ceil()) as i32
+        };
+
         let cost = if let Ok(c) = Cost::new(&index, &r.output_item_id, 1) { c } else { continue };
         if let Source::Auction = cost.source { continue }
-        let listings = if let Some(ls) = index.listings.get(&r.output_item_id) { ls } else { continue };
-        let sale = if let Ok(s) = listings.sale(r.output_item_count) { s } else { continue };
-        let sale = sale - ((0.15 * (sale as f32)).ceil()) as i32;
-
         let daily = days(&cost);
         let mut max_days = 0;
         for d in daily.values() {
             max_days = std::cmp::max(max_days, *d);
         }
-
         if sale > cost.total {
-            profits.push(FlipProfit {
+            profits.push(Profit {
                 id: r.id,
                 days: max_days,
                 sale,
@@ -78,17 +78,13 @@ fn find_flip_profits(index: &Index) -> Vec<FlipProfit> {
                 daily: daily.keys().cloned().collect(),
                 cost,
             });
-            profit_ids.insert(r.output_item_id);
-            for ing in &r.ingredients {
-                profit_ids.insert(ing.item_id);
-            }
         }
     }
     profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
     profits
 }
 
-fn command_loop(index: &Index, profits: &[FlipProfit]) -> Result<()> {
+fn command_loop(index: &Index, profits: &[Profit]) -> Result<()> {
     let mut line = String::new();
     loop {
         print!("> ");
@@ -140,7 +136,7 @@ fn command_loop(index: &Index, profits: &[FlipProfit]) -> Result<()> {
     Ok(())
 }
 
-fn print_profits_min(index: &Index, profits: &[FlipProfit], min: i32) -> Result<()> {
+fn print_profits_min(index: &Index, profits: &[Profit], min: i32) -> Result<()> {
     let mut daily_used = HashSet::new();
     'profits: for p in profits {
         if p.per_day() < min { break }
@@ -163,7 +159,7 @@ fn print_profits_min(index: &Index, profits: &[FlipProfit], min: i32) -> Result<
     Ok(())
 }
 
-fn print_profit(index: &Index, p: &FlipProfit) -> Result<()> {
+fn print_profit(index: &Index, p: &Profit) -> Result<()> {
     let recipe = index.recipes.get(&p.id).unwrap();
     let item = index.items.get(&recipe.output_item_id).unwrap();
     let cost = &p.cost;

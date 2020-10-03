@@ -190,8 +190,7 @@ fn print_profit(index: &Index, p: &Profit) -> Result<()> {
         println!("\tMats: {}", money(mp));
     }
     print_cost(&index, &cost, 1);
-    let mut materials = index.materials.clone();
-    let ingredients = shopping_ingredients(&index, &cost, &mut materials);
+    let ingredients = shopping_ingredients(&index, &cost);
     let mut shop_cost = 0;
     println!("\tShopping:");
     for (id, count) in &ingredients {
@@ -216,23 +215,13 @@ fn print_cost(index: &Index, cost: &Cost, indent: usize) {
     }
 }
 
-fn shopping_ingredients(index: &Index, cost: &Cost, materials: &mut HashMap<ItemId, i32>) -> HashMap<ItemId, i32> {
+fn shopping_ingredients(index: &Index, cost: &Cost) -> HashMap<ItemId, i32> {
     let mut out = HashMap::new();
-    let has = materials.get(&cost.id).cloned().unwrap_or(0);
-    let used = std::cmp::min(cost.quantity, has);
-    if used > 0 {
-        *materials.get_mut(&cost.id).unwrap() -= used;
-    }
-    let needed = cost.quantity - used;
-    if needed <= 0 { return HashMap::new(); }
-    if let Source::Recipe { ingredients, .. } = &cost.source {
-        for ing in ingredients.values() {
-            for (id, count) in shopping_ingredients(index, ing, materials) {
-                *out.entry(id).or_insert(0) += count;
-            }
+    for (id, count) in cost.base_ingredients() {
+        let has = index.materials.get(&id).cloned().unwrap_or(0);
+        if has < count {
+            out.insert(id, count - has);
         }
-    } else {
-        out.insert(cost.id, needed);
     }
     out
 }

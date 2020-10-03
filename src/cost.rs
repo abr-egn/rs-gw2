@@ -21,12 +21,15 @@ pub enum Source {
 }
 
 impl Source {
-    pub fn to_str(&self) -> &'static str {
+    pub fn to_str(&self) -> String {
         match *self {
-            Source::Unknown => " [UNKNOWN]",
-            Source::Special => " [SPECIAL]",
-            Source::Vendor => " [VENDOR]",
-            _ => "",
+            Source::Unknown => " [UNKNOWN]".into(),
+            Source::Special => " [SPECIAL]".into(),
+            Source::Vendor => " [VENDOR]".into(),
+            Source::Bank { used, rest: Some(ref rest) } => {
+                format!(" [{} BANK +{}]", used, rest.to_str())
+            },
+            _ => "".into(),
         }
     }
 }
@@ -39,7 +42,33 @@ pub struct Cost {
     pub total: i32,
 }
 
+fn base_ingredients_aux(id: &ItemId, source: &Source, quantity: i32) -> HashMap<ItemId, i32> {
+    let mut out = HashMap::new();
+    match source {
+        Source::Recipe { ingredients, .. } => {
+            for ing in ingredients.values() {
+                for (id, count) in ing.base_ingredients() {
+                    *out.entry(id).or_insert(0) += count;
+                }
+            }
+        }
+        Source::Bank { used, rest: Some(r) } => {
+            out.insert(*id, *used);
+            for (id, count) in base_ingredients_aux(id, r, quantity - used) {
+                *out.entry(id).or_insert(0) += count;
+            }
+        },
+        _ => { out.insert(*id, quantity); },
+    }
+
+    out
+}
+
 impl Cost {
+    pub fn base_ingredients(&self) -> HashMap<ItemId, i32> {
+        base_ingredients_aux(&self.id, &self.source, self.quantity)
+    }
+
     pub fn new(index: &Index, id: &ItemId, quantity: i32) -> Result<Cost> {
         Cost::new_with_bank(index, id, quantity, &mut HashMap::new())
     }
@@ -48,8 +77,9 @@ impl Cost {
         if let Some(count) = bank.get(id).cloned() {
             if count > 0 {
                 let used = std::cmp::min(quantity, count);
+                let remaining = quantity - used;
                 bank.insert(*id, count - used);
-                return Ok(if used == quantity {
+                return Ok(if remaining == 0 {
                     Cost {
                         id: *id,
                         source: Source::Bank { used, rest: None },
@@ -57,7 +87,7 @@ impl Cost {
                         total: 0,
                     }
                 } else {
-                    let rest = Cost::new_with_bank(index, id, quantity - used, bank)?;
+                    let rest = Cost::new_with_bank(index, id, remaining, bank)?;
                     Cost {
                         id: *id,
                         source: Source::Bank { used, rest: Some(Box::new(rest.source)) },

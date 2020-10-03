@@ -207,11 +207,23 @@ fn print_cost(index: &Index, cost: &Cost, indent: usize) {
     let ii = index.items.get(&cost.id).unwrap();
     let tabs: Vec<_> = std::iter::repeat("\t").take(indent).collect();
     let tabs = tabs.join("");
-    println!("{}{} : {} = {}{}", tabs, ii.name, cost.quantity, money(cost.total), cost.source.to_str());
-    if let Source::Recipe { ingredients, .. } = &cost.source {
-        for ing in ingredients.values() {
-            print_cost(index, ing, indent+1);
+    let (quantity, total) = if let Source::Bank { used, .. } = cost.source {
+        (used, 0)
+    } else {
+        (cost.quantity, cost.total)
+    };
+    println!("{}{} : {} = {}{}", tabs, ii.name, quantity, money(total), cost.source.to_str());
+    match &cost.source {
+        Source::Recipe { ingredients, .. } => {
+            for ing in ingredients.values() {
+                print_cost(index, ing, indent+1);
+            }
         }
+        Source::Bank { used, rest: Some(r) } => {
+            let subcost = Cost { source: (**r).clone(), quantity: cost.quantity - used, ..*cost };
+            print_cost(index, &subcost, indent);
+        }
+        _ => ()
     }
 }
 

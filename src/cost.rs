@@ -23,12 +23,12 @@ pub enum Source {
 impl Source {
     pub fn to_str(&self) -> String {
         match *self {
+            Source::Vendor => " [VENDOR]".into(),
+            //Source::Recipe { .. } => " [RECIPE]".into(),
+            //Source::Auction => " [AUCTION]".into(),
             Source::Unknown => " [UNKNOWN]".into(),
             Source::Special => " [SPECIAL]".into(),
-            Source::Vendor => " [VENDOR]".into(),
-            Source::Bank { used, rest: Some(ref rest) } => {
-                format!(" [{} BANK +{}]", used, rest.to_str())
-            },
+            Source::Bank { .. } => " [BANK]".into(),
             _ => "".into(),
         }
     }

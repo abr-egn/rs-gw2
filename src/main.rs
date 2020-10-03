@@ -8,7 +8,7 @@ mod client;
 mod cost;
 mod index;
 
-use crate::client::{Client, ItemId, RecipeId};
+use crate::client::{Client, ItemId, Recipe, RecipeId};
 use crate::cost::{Cost, Source};
 use crate::error::Result;
 use crate::index::Index;
@@ -36,21 +36,29 @@ fn main() -> Result<()> {
     let mut client = Client::new();
     let index = Index::new(&mut client, true)?;
 
-    let profits = find_profits(&index);
-    println!("profits: {}", profits.len());
+    let (flip_profits, bank_profits) = find_profits(&index);
+    println!("flip profits: {}", flip_profits.len());
+    println!("bank profits: {}", bank_profits.len());
 
+    /*
     println!("");
-    print_profits_min(&index, &profits, MIN_PROFIT)?;
+    println!("=== Flip Profits ===");
+    print_profits_min(&index, &flip_profits, MIN_PROFIT)?;
+    */
+    println!("");
+    println!("=== Bank Profits ===");
+    print_profits_min(&index, &bank_profits, 0)?;
 
     if false {
-        command_loop(&index, &profits)?;
+        command_loop(&index, &flip_profits)?;
     }
 
     Ok(())
 }
 
-fn find_profits(index: &Index) -> Vec<Profit> {
-    let mut profits = vec![];
+fn find_profits(index: &Index) -> (Vec<Profit>, Vec<Profit>) {
+    let mut flip_profits = vec![];
+    let mut bank_profits = vec![];
     for r in index.recipes.values() {
         let item = if let Some(i) = index.items.get(&r.output_item_id) { i } else { continue };
         if item.description.as_ref().map_or(false, |d| d.contains("used to craft the legendary")) { continue }
@@ -62,26 +70,86 @@ fn find_profits(index: &Index) -> Vec<Profit> {
             gross_sale - ((0.15 * (gross_sale as f32)).ceil()) as i32
         };
 
-        let cost = if let Ok(c) = Cost::new(&index, &r.output_item_id, 1) { c } else { continue };
-        if let Source::Auction = cost.source { continue }
-        let daily = days(&cost);
-        let mut max_days = 0;
-        for d in daily.values() {
-            max_days = std::cmp::max(max_days, *d);
-        }
-        if sale > cost.total {
-            profits.push(Profit {
-                id: r.id,
-                days: max_days,
-                sale,
-                value: sale - cost.total,
-                daily: daily.keys().cloned().collect(),
-                cost,
-            });
-        }
+        if let Some(p) = flip_profit(index, r, sale) { flip_profits.push(p); }
+        if let Some(p) = bank_profit(index, r, sale) { bank_profits.push(p); }
     }
-    profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
-    profits
+    flip_profits.sort_by(|b, a| { a.per_day().cmp(&b.per_day()) });
+    (flip_profits, bank_profits)
+}
+
+fn flip_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
+    let cost = if let Ok(c) = Cost::new(&index, &r.output_item_id, 1) { c } else { return None };
+    if let Source::Auction = cost.source { return None }
+    let daily = days(&cost);
+    let mut days = 0;
+    for d in daily.values() {
+        days = std::cmp::max(days, *d);
+    }
+    
+    if sale > cost.total {
+        return Some(Profit {
+            id: r.id,
+            days,
+            sale,
+            value: sale - cost.total,
+            daily: daily.keys().cloned().collect(),
+            cost,
+        });
+    }
+    None
+}
+
+fn bank_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
+    let mut bank = index.materials.clone();
+    let cost = if let Ok(c) = Cost::new_with_bank(&index, &r.output_item_id, 1, &mut bank) { c } else { return None };
+    if let Source::Auction = cost.source { return None }
+    let daily = days(&cost);
+    let mut days = 0;
+    for d in daily.values() {
+        days = std::cmp::max(days, *d);
+    }
+
+    let used = bank_used(&cost);
+    let mut used_profit = 0;
+    for (id, count) in &used {
+        let l = if let Some(l) = index.listings.get(id) { l } else { continue };
+        let s = if let Ok(s) = l.sale(*count) { s } else { continue };
+        used_profit += s;
+    }
+    if sale > cost.total + used_profit {
+        return Some(Profit {
+            id: r.id,
+            days,
+            sale,
+            value: sale - (cost.total + used_profit),
+            daily: daily.keys().cloned().collect(),
+            cost,
+        });
+    }
+    None
+}
+
+fn bank_used(c: &Cost) -> HashMap<ItemId, i32> {
+    let mut out = HashMap::new();
+    bank_used_aux(&c.id, &c.source, &mut out);
+    out
+}
+
+fn bank_used_aux(id: &ItemId, s: &Source, out: &mut HashMap<ItemId, i32>) {
+    match s {
+        Source::Bank { used, rest } => {
+            *out.entry(*id).or_insert(0) += used;
+            if let Some(r) = rest {
+                bank_used_aux(id, r, out);
+            }
+        },
+        Source::Recipe { ingredients, .. } => {
+            for (id, c) in ingredients {
+                bank_used_aux(id, &c.source, out);
+            }
+        },
+        _ => ()
+    }
 }
 
 fn command_loop(index: &Index, profits: &[Profit]) -> Result<()> {

@@ -168,7 +168,7 @@ impl Cost {
     }
 }
 
-pub fn vendor(id: &ItemId) -> Option<i32> {
+fn vendor(id: &ItemId) -> Option<i32> {
     Some(match id.0 {
         // Thermocatalytic Reagent
         46747 => 150,

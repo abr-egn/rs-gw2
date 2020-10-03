@@ -114,9 +114,11 @@ fn bank_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
     let used = bank_used(&cost);
     let mut used_profit = 0;
     for (id, count) in &used {
-        let l = if let Some(l) = index.listings.get(id) { l } else { continue };
-        let s = if let Ok(s) = l.sale(*count) { s } else { continue };
-        used_profit += s;
+        if let Some(s) = index.listings.get(id).and_then(|l| l.sale(*count).ok()) {
+            used_profit += s;
+        }/* else if let Some(sc) = cost::special(index, id) {
+            used_profit += sc*count;
+        }*/
     }
     if sale > cost.total + used_profit {
         return Some(Profit {

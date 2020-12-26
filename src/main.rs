@@ -11,7 +11,7 @@ mod index;
 use crate::client::{Client, ItemId, Recipe, RecipeId};
 use crate::cost::{Cost, Source};
 use crate::error::Result;
-use crate::index::Index;
+use crate::index::{Index, RecipeSource};
 
 #[derive(Debug, Clone)]
 struct Profit {
@@ -35,7 +35,7 @@ const MIN_PROFIT: i32 = 5000;
 
 fn main() -> Result<()> {
     let mut client = Client::new();
-    let index = Index::new(&mut client, true)?;
+    let index = Index::new(&mut client, RecipeSource::Characters)?;
 
     let (flip_profits, bank_profits) = find_profits(&index);
     println!("flip profits: {}", flip_profits.len());

@@ -13,23 +13,32 @@ pub struct Index {
     pub offerings: HashSet<ItemId>,
 }
 
+#[allow(dead_code)]
+pub enum RecipeSource {
+    Characters,
+    All,
+}
+
 impl Index {
-    pub fn new(client: &mut Client, by_character: bool) -> Result<Index> {
+    pub fn new(client: &mut Client, source: RecipeSource) -> Result<Index> {
         let all_ids;
-        if by_character {
-            let names: Vec<String> = client.characters()?;
-            println!("{:?}", names);
-            let mut id_set = HashSet::<RecipeId>::new();
-            for name in &names {
-                let r: CharacterRecipes = client.character_recipes(name)?;
-                println!("{}: {}", name, r.recipes.len());
-                for id in &r.recipes {
-                    id_set.insert(*id);
+        match source {
+            RecipeSource::Characters => {
+                let names: Vec<String> = client.characters()?;
+                println!("{:?}", names);
+                let mut id_set = HashSet::<RecipeId>::new();
+                for name in &names {
+                    let r: CharacterRecipes = client.character_recipes(name)?;
+                    println!("{}: {}", name, r.recipes.len());
+                    for id in &r.recipes {
+                        id_set.insert(*id);
+                    }
                 }
+                all_ids = id_set.iter().cloned().collect();
             }
-            all_ids = id_set.iter().cloned().collect();
-        } else {
-            all_ids = client.all_recipes()?;
+            RecipeSource::All => {
+                all_ids = client.all_recipes()?;
+            }
         }
         println!("known recipes: {}", all_ids.len());
 

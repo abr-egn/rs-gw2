@@ -107,4 +107,15 @@ impl Index {
 
         Ok(Index{recipes, recipes_by_item, items, materials, listings, offerings})
     }
+
+    pub fn refresh_materials(&mut self, client: &mut Client) -> Result<()> {
+        let mut materials = HashMap::new();
+        let ms = client.materials()?;
+        println!("materials: {}", ms.len());
+        for m in ms {
+            materials.insert(m.id, m.count);
+        }
+        self.materials = materials;
+        Ok(())
+    }
 }

@@ -33,26 +33,63 @@ impl Profit {
 
 const MIN_PROFIT: i32 = 5000;
 
+enum Command {
+    Done,
+    Continue,
+    Print { min_profit: i32 },
+    RefreshMats,
+    Profit { id: ItemId },
+    Cost { id: ItemId, count: i32 },
+}
+
 fn main() -> Result<()> {
     let mut client = Client::new();
-    let index = Index::new(&mut client, RecipeSource::Characters)?;
+    let mut index = Index::new(&mut client, RecipeSource::Characters)?;
 
     let (flip_profits, bank_profits) = find_profits(&index);
     println!("flip profits: {}", flip_profits.len());
     println!("bank profits: {}", bank_profits.len());
 
-    println!("");
-    println!("=== Flip Profits ===");
-    println!("");
-    print_profits_min(&index, &flip_profits, MIN_PROFIT)?;
-    println!("=== Bank Profits ===");
-    println!("");
-    print_profits_min(&index, &bank_profits, MIN_PROFIT)?;
-
-    if false {
-        command_loop(&index, &flip_profits)?;
+    let mut command = Command::Print { min_profit: MIN_PROFIT };
+    loop {
+        use Command::*;
+        let mut print = None;
+        match command {
+            Done => break,
+            Continue => (),
+            Print { min_profit } => print = Some(min_profit),
+            RefreshMats => {
+                index.refresh_materials(&mut client)?;
+                print = Some(MIN_PROFIT);
+            }
+            Profit { id } => {
+                for p in &flip_profits {
+                    let r = index.recipes.get(&p.id).unwrap();
+                    if r.output_item_id == id {
+                        print_profit(&index, p)?;
+                    }
+                }
+            }
+            Cost { id, count } => print_cost(&index, &cost::Cost::new(&index, &id, count), 0),
+        };
+        if let Some(min_profit) = print {
+            println!("");
+            println!("=== Flip Profits ===");
+            println!("");
+            print_profits_min(&index, &flip_profits, min_profit)?;
+            println!("=== Bank Profits ===");
+            println!("");
+            print_profits_min(&index, &bank_profits, min_profit)?;
+        }
+        command = match get_command() {
+            Ok(c) => c,
+            Err(e) => {
+                println!("Error: {}", e);
+                Continue
+            }
+        }
     }
-
+    
     Ok(())
 }
 
@@ -79,7 +116,7 @@ fn find_profits(index: &Index) -> (Vec<Profit>, Vec<Profit>) {
 }
 
 fn flip_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
-    let cost = if let Ok(c) = Cost::new(&index, &r.output_item_id, 1) { c } else { return None };
+    let cost = Cost::new(&index, &r.output_item_id, 1);
     if let Source::Auction = cost.source { return None }
     let daily = days(&cost);
     let mut days = 0;
@@ -103,7 +140,7 @@ fn flip_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
 
 fn bank_profit(index: &Index, r: &Recipe, sale: i32) -> Option<Profit> {
     let mut bank = index.materials.clone();
-    let cost = if let Ok(c) = Cost::new_with_bank(&index, &r.output_item_id, 1, &mut bank) { c } else { return None };
+    let cost = Cost::new_with_bank(&index, &r.output_item_id, 1, &mut bank);
     if let Source::Auction = cost.source { return None }
     let daily = days(&cost);
     let mut days = 0;
@@ -196,7 +233,7 @@ fn print_profit(index: &Index, p: &Profit) -> Result<()> {
     let mut shop_cost = 0;
     println!("\tShopping:");
     for (id, count) in &ingredients {
-        let cost = Cost::new(&index, id, *count)?;
+        let cost = Cost::new(&index, id, *count);
         let item = index.items.get(id).unwrap();
         println!("\t\t{} : {} = {}{}", item.name, count, money(cost.total), cost.source.to_str());
         shop_cost += cost.total;
@@ -284,54 +321,30 @@ fn days(cost: &Cost) -> HashMap<ItemId, i32> {
     out
 }
 
-fn command_loop(index: &Index, profits: &[Profit]) -> Result<()> {
+fn get_command() -> Result<Command> {
+    use Command::*;
     let mut line = String::new();
-    loop {
-        print!("> ");
-        std::io::stdout().flush()?;
-        line.clear();
-        stdin().read_line(&mut line)?;
-        let line = line.trim();
-        if line == "exit" { break }
-        if line.starts_with("profit ") {
-            let id_str = line.strip_prefix("profit ").unwrap();
-            let id = match id_str.parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(id) => ItemId(id),
-            };
-            for p in profits {
-                let r = index.recipes.get(&p.id).unwrap();
-                if r.output_item_id == id {
-                    print_profit(&index, p)?;
-                }
-            }
-        }
-        if line.starts_with("cost ") {
-            let parts: Vec<_> = line.strip_prefix("cost ").unwrap().split(' ').collect();
-            let id = match parts[0].parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(id) => ItemId(id),
-            };
-            let count = if parts.len() == 2 {
-                match parts[1].parse::<i32>() {
-                    Err(e) => { println!("{}", e); continue },
-                    Ok(c) => c,
-                }
-            } else { 1 };
-            let cost = match Cost::new(&index, &id, count) {
-                Err(e) => { println!("{}", e); continue },
-                Ok(c) => c,
-            };
-            print_cost(&index, &cost, 0);
-        }
-        if line.starts_with("min profit ") {
-            let profit_str = line.strip_prefix("min profit ").unwrap();
-            let profit = match profit_str.parse::<i32>() {
-                Err(e) => { println!("{}", e); continue },
-                Ok(n) => n,
-            };
-            print_profits_min(index, profits, profit)?;
-        }
+    println!("mats | profit <id> | cost <id> [count] | min profit <copper>");
+    print!("> ");
+    std::io::stdout().flush()?;
+    line.clear();
+    stdin().read_line(&mut line)?;
+    let line = line.trim();
+    if line == "exit" { return Ok(Done); }
+    if line == "mats" { return Ok(RefreshMats); }
+    if let Some(rest) = line.strip_prefix("profit ") {
+        return Ok(Profit { id: ItemId(rest.parse::<i32>()?) })
     }
-    Ok(())
+    if let Some(rest) = line.strip_prefix("cost ") {
+        let parts: Vec<_> = rest.split(' ').collect();
+        let id = ItemId(parts[0].parse::<i32>()?);
+        let count = if parts.len() == 2 {
+            parts[1].parse::<i32>()?
+        } else { 1 };
+        return Ok(Cost { id, count })
+    }
+    if let Some(rest) = line.strip_prefix("min profit ") {
+        return Ok(Print { min_profit: rest.parse::<i32>()? })
+    }
+    failed!("unknown command {:?}", line);
 }

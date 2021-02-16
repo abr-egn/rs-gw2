@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::client::{ItemId, RecipeId};
-use crate::error::Result;
 use crate::index::Index;
 
 #[derive(Debug, Clone)]
@@ -69,17 +68,17 @@ impl Cost {
         base_ingredients_aux(&self.id, &self.source, self.quantity)
     }
 
-    pub fn new(index: &Index, id: &ItemId, quantity: i32) -> Result<Cost> {
+    pub fn new(index: &Index, id: &ItemId, quantity: i32) -> Cost {
         Cost::new_with_bank(index, id, quantity, &mut HashMap::new())
     }
 
-    pub fn new_with_bank(index: &Index, id: &ItemId, quantity: i32, bank: &mut HashMap<ItemId, i32>) -> Result<Cost> {
+    pub fn new_with_bank(index: &Index, id: &ItemId, quantity: i32, bank: &mut HashMap<ItemId, i32>) -> Cost {
         if let Some(count) = bank.get(id).cloned() {
             if count > 0 {
                 let used = std::cmp::min(quantity, count);
                 let remaining = quantity - used;
                 bank.insert(*id, count - used);
-                return Ok(if remaining == 0 {
+                return if remaining == 0 {
                     Cost {
                         id: *id,
                         source: Source::Bank { used, rest: None },
@@ -87,35 +86,35 @@ impl Cost {
                         total: 0,
                     }
                 } else {
-                    let rest = Cost::new_with_bank(index, id, remaining, bank)?;
+                    let rest = Cost::new_with_bank(index, id, remaining, bank);
                     Cost {
                         id: *id,
                         source: Source::Bank { used, rest: Some(Box::new(rest.source)) },
                         quantity,
                         total: rest.total,
                     }
-                })
+                }
             }
         }
         if let Some(value) = vendor(id) {
-            return Ok(Cost {
+            return Cost {
                 id: *id,
                 source: Source::Vendor,
                 quantity,
                 total: quantity * value,
-            })
+            }
         }
         if let Some(value) = special(index, id) {
-            return Ok(Cost {
+            return Cost {
                 id: *id,
                 source: Source::Special,
                 quantity,
                 total: quantity * value,
-            })
+            }
         }
         let recipe = match index.recipes_by_item.get(id) {
             None => {
-                return Ok(index.listings.get(id)
+                return index.listings.get(id)
                     .and_then(|ls| ls.cost(quantity).ok())
                     .map(|total| Cost {
                         id: *id,
@@ -128,7 +127,7 @@ impl Cost {
                         source: Source::Unknown,
                         quantity,
                         total: 0,
-                    }))
+                    })
             }
             Some(r) => r,
         };
@@ -139,7 +138,7 @@ impl Cost {
         // to this if auctioning is cheaper.
         let old_bank = bank.clone();
         for ing in &recipe.ingredients {
-            let ing_cost = Cost::new_with_bank(index, &ing.item_id, ing.count * runs, bank)?;
+            let ing_cost = Cost::new_with_bank(index, &ing.item_id, ing.count * runs, bank);
             craft_total += ing_cost.total;
             ingredients.insert(ing.item_id, ing_cost);
         }
@@ -147,16 +146,16 @@ impl Cost {
             if let Ok(total) = ls.cost(quantity) {
                 if total < craft_total {
                     *bank = old_bank;
-                    return Ok(Cost {
+                    return Cost {
                         id: *id,
                         source: Source::Auction,
                         quantity,
                         total,
-                    })
+                    }
                 }
             }
         }
-        Ok(Cost {
+        Cost {
             id: *id,
             source: Source::Recipe {
                 id: recipe.id,
@@ -164,7 +163,7 @@ impl Cost {
             },
             quantity,
             total: craft_total,
-        })
+        }
     }
 }
 
@@ -229,6 +228,9 @@ pub fn special(index: &Index, id: &ItemId) -> Option<i32> {
         // Ley Line Spark
         // Handwave
         69392 => 1000,
+        // Celestial Orichalcum Imbued Inscription
+        // Account-bound, recipe only available via pact supply agents
+        43775 => 1000000,
         // Dungeon widgets
         _ if index.offerings.contains(id) => 1000000,
 
